@@ -14,9 +14,9 @@ public class AndroidLauncher extends AndroidApplication implements OnDrawFrame {
 		super.onCreate(savedInstanceState);
 		mHeadTracker = new HeadTracker(this);
 		AndroidApplicationConfiguration config = new AndroidApplicationConfiguration();
-		config.useAccelerometer = true;
-		config.useCompass = true;
-		config.useGyroscope = true;
+		config.useAccelerometer = false;
+		config.useCompass = false;
+		config.useGyroscope = false;
 		initialize(new MyGdxGame(this), config);
 	}
 

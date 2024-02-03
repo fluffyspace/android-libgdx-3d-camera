@@ -65,7 +65,7 @@ public class MyGdxGame extends ApplicationAdapter {
 		// Constructs a new OrthographicCamera, using the given viewport width and height
 		// Height is multiplied by aspect ratio.
 		cam = new PerspectiveCamera(67, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-		cam.position.set(10f, 10f, 10f);
+		cam.position.set(0, 0, 0);
 		cam.lookAt(0,0,0);
 		cam.near = 1f;
 		cam.far = 300f;
@@ -80,21 +80,13 @@ public class MyGdxGame extends ApplicationAdapter {
 				new Material(ColorAttribute.createDiffuse(Color.GREEN)),
 				VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
 		instance = new ModelInstance(model);
+		instance.transform.translate(-3, 0, 10f);
 
 		modelBatch = new ModelBatch();
 	}
-	Vector3 customUpVector = new Vector3(0, 0, -1); // for example, pointing in the negative Z-axis
 	final Vector3 tmp = new Vector3();
 	@Override
 	public void render () {
-		boolean available = Gdx.input.isPeripheralAvailable(Input.Peripheral.Accelerometer);
-
-		if(available) {
-			Gdx.input.getRotationMatrix(rotationMatrix.val);
-		}
-		float azimuth = Gdx.input.getAzimuth();
-		float pitch = Gdx.input.getPitch();
-		float roll = Gdx.input.getRoll();
 
 		// Extract the rotation angle from the rotation matrix
 		//float rotationAngle = MathUtils.radiansToDegrees * MathUtils.atan2(rotationMatrix.val[Matrix4.M21], rotationMatrix.val[Matrix4.M22]);
@@ -130,7 +122,7 @@ public class MyGdxGame extends ApplicationAdapter {
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
 
-
+		//instance.transform..mul(new Matrix4(floats));
 		modelBatch.begin(cam);
 		modelBatch.render(instance, environment);
 		modelBatch.end();

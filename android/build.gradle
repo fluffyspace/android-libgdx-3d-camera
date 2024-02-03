@@ -19,7 +19,7 @@ android {
     }
     defaultConfig {
         applicationId "com.mygdx.game"
-        minSdkVersion 14
+        minSdkVersion 24
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"
@@ -87,3 +87,26 @@ tasks.register('run', Exec) {
 }
 
 eclipse.project.name = appName + "-android"
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-location:21.1.0'
+    implementation "androidx.datastore:datastore-preferences:1.0.0"
+    // optional - RxJava2 support
+    implementation "androidx.datastore:datastore-preferences-rxjava2:1.0.0"
+
+    // optional - RxJava3 support
+    implementation "androidx.datastore:datastore-preferences-rxjava3:1.0.0"
+
+    def room_version = "2.6.1"
+
+    implementation "androidx.room:room-runtime:$room_version"
+    annotationProcessor "androidx.room:room-compiler:$room_version"
+
+    // optional - RxJava2 support for Room
+    implementation "androidx.room:room-rxjava2:$room_version"
+
+    // optional - RxJava3 support for Room
+    implementation "androidx.room:room-rxjava3:$room_version"
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}
