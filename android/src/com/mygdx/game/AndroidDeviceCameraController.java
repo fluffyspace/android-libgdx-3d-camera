@@ -33,14 +33,14 @@ public class AndroidDeviceCameraController implements DeviceCameraControl {
 
     @Override
     public synchronized void prepareCamera() {
-        activity.setFixedSize(960,640);
+        //activity.setFixedSize(960,640);
         if (previewView == null) {
             previewView = new PreviewView(activity);
             previewView.setId(R.id.previewview);
             Log.d("ingo", "creating previewView");
         }
         FrameLayout frameLayout = activity.frameLayout;
-        previewView.setLayoutParams(new LayoutParams( LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT ));
+        previewView.setLayoutParams(new LayoutParams( LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT ));
         Log.d("ingo", "before " + frameLayout.getChildCount());
         frameLayout.addView(previewView, 0);
         Log.d("ingo", "after " + frameLayout.getChildCount());

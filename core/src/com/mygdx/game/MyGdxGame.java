@@ -3,6 +3,7 @@ package com.mygdx.game;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -25,11 +26,12 @@ import com.badlogic.gdx.math.Quaternion;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.FloatArray;
 import com.badlogic.gdx.utils.ScreenUtils;
+import com.badlogic.gdx.utils.viewport.ExtendViewport;
 
 import java.awt.geom.AffineTransform;
 import java.util.Arrays;
 
-public class MyGdxGame extends ApplicationAdapter {
+public class MyGdxGame extends ApplicationAdapter implements InputProcessor {
 	static final int WORLD_WIDTH = 100;
 	static final int WORLD_HEIGHT = 100;
 
@@ -49,6 +51,81 @@ public class MyGdxGame extends ApplicationAdapter {
 	double[] camera_coordinates;
 	double[] object_coordinates;
 	DeviceCameraControl deviceCameraControl;
+
+
+	private ExtendViewport viewport;
+
+	Vector3 tp = new Vector3();
+	boolean dragging;
+
+	public final static float SCALE = 32f;
+	public final static float INV_SCALE = 1.f/SCALE;
+	// this is our "target" resolution, note that the window can be any size, it is not bound to this one
+	public final static float VP_WIDTH = 1280 * INV_SCALE;
+	public final static float VP_HEIGHT = 720 * INV_SCALE;
+
+	@Override
+	public boolean keyDown(int keycode) {
+		return false;
+	}
+
+	@Override
+	public boolean keyUp(int keycode) {
+		return false;
+	}
+
+	@Override
+	public boolean keyTyped(char character) {
+		return false;
+	}
+
+	@Override
+	public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+		// ignore if its not left mouse button or first touch pointer
+		if (button != Input.Buttons.LEFT || pointer > 0) return false;
+		cam.unproject(tp.set(screenX, screenY, 0));
+		System.out.println(tp.toString());
+		dragging = true;
+		return false;
+	}
+
+	@Override
+	public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+		if (button != Input.Buttons.LEFT || pointer > 0) return false;
+		cam.unproject(tp.set(screenX, screenY, 0));
+		dragging = false;
+		return true;
+	}
+
+	@Override
+	public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
+		return false;
+	}
+
+	@Override
+	public boolean touchDragged(int screenX, int screenY, int pointer) {
+		if (!dragging) return false;
+		cam.unproject(tp.set(screenX, screenY, 0));
+		return true;
+	}
+
+	@Override
+	public boolean mouseMoved(int screenX, int screenY) {
+		return false;
+	}
+
+	@Override
+	public boolean scrolled(float amountX, float amountY) {
+		return false;
+	}
+
+	@Override public void resize (int width, int height) {
+		// viewport must be updated for it to work properly
+		if(viewport != null) {
+			viewport.update(width, height, true);
+		}
+	}
+
 	public enum Mode {
 		normal,
 		prepare,
@@ -90,7 +167,7 @@ public class MyGdxGame extends ApplicationAdapter {
 		// Height is multiplied by aspect ratio.
 		cam = new PerspectiveCamera(81, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 		cam.position.set(0, 0, 0);
-		cam.lookAt(0,0,0);
+		cam.lookAt(1,0,0);
 		cam.near = 1f;
 		cam.far = 300f;
 		cam.update();
@@ -104,14 +181,18 @@ public class MyGdxGame extends ApplicationAdapter {
 				new Material(ColorAttribute.createDiffuse(Color.GREEN)),
 				VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
 		instance = new ModelInstance(model);
-		instance.transform.translate(diff[0], diff[1], diff[2]);
+		instance.transform.setToTranslation(10, 0, 0);
+		//instance.transform.translate(diff[0], diff[1], diff[2]);
 		//instance.transform.rotate(new Vector3(0f, 1f, 0f), 90f);
 		System.out.println(Arrays.toString(diff));
 
 		modelBatch = new ModelBatch();
-
+		//viewport = new ExtendViewport(VP_WIDTH, VP_HEIGHT, cam);
+		Gdx.input.setInputProcessor(this);
 	}
 	final Vector3 tmp = new Vector3();
+	//Quaternion qq = new Quaternion(1, 0, 0, 1);
+float taa = 0;
 	@Override
 	public void render () {
 
@@ -132,26 +213,27 @@ public class MyGdxGame extends ApplicationAdapter {
 		//cam.rotate(rotationMatrix);
 
 		//cam.view.set(viewMatrix);
-		//cam.update();
-		float aspect = cam.viewportWidth / cam.viewportHeight;
-		cam.projection.setToProjection(Math.abs(cam.near), Math.abs(cam.far), cam.fieldOfView, aspect);
-		cam.view.setToLookAt(cam.position, tmp.set(cam.position).add(cam.direction), cam.up);
-		cam.view.mul(new Matrix4(floats));
-		cam.view.rotate(new Vector3(0f, 1f, 0f), 90);
-		//cam.rotate();
-		cam.combined.set(cam.projection);
-		Matrix4.mul(cam.combined.val, cam.view.val);
-
-		cam.invProjectionView.set(cam.combined);
-		Matrix4.inv(cam.invProjectionView.val);
-		cam.frustum.update(cam.invProjectionView);
+		cam.update();
 
 		Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 		//Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
+		//instance.transform.mul()
+		Quaternion quat = new Quaternion();
+		new Matrix4(floats).getRotation(quat);
+		quat = new Quaternion(-quat.z, quat.y, quat.x, quat.w);
 
-		//instance.transform..mul(new Matrix4(floats));
+		//instance.transform.rotate(new Vector3(0, 1, 0), 10f*Gdx.graphics.getDeltaTime());
+		instance.transform.set(new Matrix4());
+		//instance.transform.rotate(new Vector3(0, 1, 0), taa);
+		//instance.transform.setToTranslation(new Vector3(10, 0, 0));
+		//instance.transform.mul(new Matrix4().translate(50, 0, 0));
+		taa += 1f;
+		instance.transform.mul(new Matrix4().rotate(quat).translate(100, 1, 1));
+		//instance.transform.setToRotation(new Vector3(0, 0, 1), 0);
+		//instance.transform.rotate(quat);
+
 		modelBatch.begin(cam);
 		modelBatch.render(instance, environment);
 		modelBatch.end();
