@@ -19,19 +19,40 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Camera coordinates: "
-        android:textSize="18sp"/>
+        android:textSize="20sp"/>
     <TextView
         android:id="@+id/camera_coordinates"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="x, y, z"/>
-    <Button
-        android:id="@+id/camera_set_coordinates"
-        android:layout_width="wrap_content"
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:text="Set to current location"
-        android:padding="20dp"/>
+        android:hint="Latitude, longidute">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/camera_coordinates_et"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </com.google.android.material.textfield.TextInputLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button
+                android:id="@+id/camera_set_coordinates_from_et"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="Get from text"
+                android:padding="20dp"/>
+        <Button
+            android:id="@+id/camera_set_coordinates"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Get from current location"
+            android:padding="20dp"/>
+    </LinearLayout>
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
@@ -40,17 +61,43 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Object coordinates: "
-        android:textSize="18sp"/>
+        android:textSize="20sp"/>
     <TextView
         android:id="@+id/object_coordinates"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="x, y, z"/>
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Latitude, longidute">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/object_coordinates_et"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </com.google.android.material.textfield.TextInputLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/object_set_coordinates_from_et"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Get from text"
+            android:padding="20dp"/>
+        <Button
+            android:id="@+id/object_set_coordinates"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="Get from current location"
+            android:padding="20dp"/>
+    </LinearLayout>
     <Button
-        android:id="@+id/object_set_coordinates"
+        android:id="@+id/refresh"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:text="Set to current location"
-        android:padding="20dp"/>
+        android:text="refresh"/>
 </LinearLayout>

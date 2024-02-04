@@ -46,8 +46,32 @@ public class MyGdxGame extends ApplicationAdapter {
 
 	OnDrawFrame onDrawFrame;
 	public Environment environment;
-	MyGdxGame(OnDrawFrame onDrawFrame){
+	double[] camera_coordinates;
+	double[] object_coordinates;
+	DeviceCameraControl deviceCameraControl;
+	public enum Mode {
+		normal,
+		prepare,
+		preview,
+		takePicture,
+		waitForPictureReady,
+	}
+
+
+	private Mode mode = Mode.normal;
+	float[] diff;
+	MyGdxGame(OnDrawFrame onDrawFrame, double[] camera_coordinates, double[] object_coordinates, DeviceCameraControl deviceCameraControl){
 		this.onDrawFrame = onDrawFrame;
+		this.camera_coordinates = camera_coordinates;
+		this.object_coordinates = object_coordinates;
+		this.deviceCameraControl = deviceCameraControl;
+		//diff = new float[]{(float) (object_coordinates[0] - camera_coordinates[0]), (float) (object_coordinates[2] - camera_coordinates[2]), (float) (object_coordinates[1] - camera_coordinates[1])};
+		diff = new float[]{(float) (camera_coordinates[0] - object_coordinates[0]), (float) (camera_coordinates[2] - object_coordinates[2]), (float) (camera_coordinates[1] - object_coordinates[1])};
+		float scalar = 10000;
+		diff[0] = diff[0]*scalar;
+		diff[1] = diff[1]*scalar;
+		diff[2] = diff[2]*scalar;
+		System.out.println("Dobio sam " + Arrays.toString(camera_coordinates) + " i " + Arrays.toString(object_coordinates));
 	}
 
 	@Override
@@ -64,7 +88,7 @@ public class MyGdxGame extends ApplicationAdapter {
 
 		// Constructs a new OrthographicCamera, using the given viewport width and height
 		// Height is multiplied by aspect ratio.
-		cam = new PerspectiveCamera(67, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+		cam = new PerspectiveCamera(81, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 		cam.position.set(0, 0, 0);
 		cam.lookAt(0,0,0);
 		cam.near = 1f;
@@ -80,9 +104,12 @@ public class MyGdxGame extends ApplicationAdapter {
 				new Material(ColorAttribute.createDiffuse(Color.GREEN)),
 				VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
 		instance = new ModelInstance(model);
-		instance.transform.translate(-3, 0, 10f);
+		instance.transform.translate(diff[0], diff[1], diff[2]);
+		//instance.transform.rotate(new Vector3(0f, 1f, 0f), 90f);
+		System.out.println(Arrays.toString(diff));
 
 		modelBatch = new ModelBatch();
+
 	}
 	final Vector3 tmp = new Vector3();
 	@Override
@@ -100,7 +127,7 @@ public class MyGdxGame extends ApplicationAdapter {
 
 		//cam.rotate(q2.mul(q.conjugate()));
 		//cam.view.setToRotation(Vector3.X, roll)
-		System.out.println(Arrays.toString(floats));
+		//System.out.println(Arrays.toString(floats));
 
 		//cam.rotate(rotationMatrix);
 
@@ -110,6 +137,7 @@ public class MyGdxGame extends ApplicationAdapter {
 		cam.projection.setToProjection(Math.abs(cam.near), Math.abs(cam.far), cam.fieldOfView, aspect);
 		cam.view.setToLookAt(cam.position, tmp.set(cam.position).add(cam.direction), cam.up);
 		cam.view.mul(new Matrix4(floats));
+		cam.view.rotate(new Vector3(0f, 1f, 0f), 90);
 		//cam.rotate();
 		cam.combined.set(cam.projection);
 		Matrix4.mul(cam.combined.val, cam.view.val);
@@ -120,6 +148,7 @@ public class MyGdxGame extends ApplicationAdapter {
 
 		Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+		//Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
 
 		//instance.transform..mul(new Matrix4(floats));
