@@ -16,6 +16,8 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.SeekBar;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -74,6 +76,7 @@ public class AndroidApplicationOverrided extends AppCompatActivity implements An
     private int wasFocusChanged = -1;
     private boolean isWaitingForAudio = false;
     public FrameLayout frameLayout;
+    public View fieldOfViewLayout;
 
     /** This method has to be called in the {@link Activity#onCreate(Bundle)} method. It sets up all the things necessary to get
      * input, render via OpenGL and so on. Uses a default {@link AndroidApplicationConfiguration}.
@@ -182,6 +185,10 @@ public class AndroidApplicationOverrided extends AppCompatActivity implements An
             graphics.getView().setId(R.id.graphicsview);
             frameLayout.addView(graphics.getView());
 
+            fieldOfViewLayout = getLayoutInflater().inflate(R.layout.field_of_view_layout, null);
+            fieldOfViewLayout.setLayoutParams(new FrameLayout.LayoutParams( ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM ));
+            fieldOfViewLayout.setId(R.id.seekbar);
+            frameLayout.addView(fieldOfViewLayout);
 
             setContentView(frameLayout, createLayoutParams());
         }

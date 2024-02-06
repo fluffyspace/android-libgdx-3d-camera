@@ -2,7 +2,7 @@ package com.ingokodba.dragnav.baza
 
 import android.content.Context
 import androidx.room.*
-import com.mygdx.game.Objekt
+import com.mygdx.game.baza.Objekt
 import java.lang.ref.WeakReference
 
 
@@ -10,7 +10,7 @@ import java.lang.ref.WeakReference
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
-    abstract fun krugSAplikacijamaDao(): ObjektDao
+    abstract fun objektDao(): ObjektDao
 
     fun setInstanceToNull(){
         instance = WeakReference(null)

@@ -3,4 +3,5 @@
     <item name="frame_llayout" type="id"/>
     <item name="graphicsview" type="id"/>
     <item name="previewview" type="id"/>
+    <item name="seekbar" type="id"/>
 </resources>

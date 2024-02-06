@@ -51,7 +51,7 @@ public class MyGdxGame extends ApplicationAdapter implements InputProcessor {
 	double[] camera_coordinates;
 	double[] object_coordinates;
 	DeviceCameraControl deviceCameraControl;
-
+	int fov = 50;
 
 	private ExtendViewport viewport;
 
@@ -195,7 +195,7 @@ public class MyGdxGame extends ApplicationAdapter implements InputProcessor {
 float taa = 0;
 	@Override
 	public void render () {
-
+		cam.fieldOfView = fov;
 		// Extract the rotation angle from the rotation matrix
 		//float rotationAngle = MathUtils.radiansToDegrees * MathUtils.atan2(rotationMatrix.val[Matrix4.M21], rotationMatrix.val[Matrix4.M22]);
 
@@ -230,7 +230,7 @@ float taa = 0;
 		//instance.transform.setToTranslation(new Vector3(10, 0, 0));
 		//instance.transform.mul(new Matrix4().translate(50, 0, 0));
 		taa += 1f;
-		instance.transform.mul(new Matrix4().rotate(quat).translate(100, 1, 1));
+		instance.transform.mul(new Matrix4().rotate(quat).translate(100, 0, 0));
 		//instance.transform.setToRotation(new Vector3(0, 0, 1), 0);
 		//instance.transform.rotate(quat);
 

@@ -7,7 +7,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -25,7 +28,9 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
     private var mHeadTracker: HeadTracker? = null
     private var origWidth = 0
     private var origHeight = 0
+    var fov: Int = 50
     var gson = Gson()
+    lateinit var fovTv: TextView
 
     private val activityResultLauncher =
         registerForActivityResult(
@@ -67,14 +72,24 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         val intent = intent
         val camera_coordinates = intent.getStringExtra("camera_coordinates")
         val object_coordinates = intent.getStringExtra("object_coordinates")
-        initialize(
-            MyGdxGame(
-                this,
-                gson.fromJson(camera_coordinates, DoubleArray::class.java as Type),
-                gson.fromJson(object_coordinates, DoubleArray::class.java as Type),
-                cameraControl
-            ), config
+        val game = MyGdxGame(
+            this,
+            gson.fromJson(camera_coordinates, DoubleArray::class.java as Type),
+            gson.fromJson(object_coordinates, DoubleArray::class.java as Type),
+            cameraControl
         )
+        initialize(game, config)
+        fovTv = this.fieldOfViewLayout.findViewById(R.id.fovValueTv)
+        this.fieldOfViewLayout.findViewById<Button>(R.id.fovUp).setOnClickListener {
+            fov++
+            fovTv.setText(fov.toString())
+            game.fov = fov
+        }
+        this.fieldOfViewLayout.findViewById<Button>(R.id.fovDown).setOnClickListener {
+            fov--
+            fovTv.setText(fov.toString())
+            game.fov = fov
+        }
         if(this.frameLayout is FrameLayout){
             Log.d("ingo", "framelayout")
             Log.d("ingo", this.frameLayout.childCount.toString())

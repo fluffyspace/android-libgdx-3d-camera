@@ -27,6 +27,12 @@ public class AddCoordinateFragment extends DialogFragment {
                     public void onClick(DialogInterface dialogInterface, int i) {
                         dismiss();
                     }
+                })
+                .setPositiveButton("Next", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                        dismiss();
+                    }
                 });
         return builder.create();
     }

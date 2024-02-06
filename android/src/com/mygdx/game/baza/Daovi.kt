@@ -1,7 +1,7 @@
 package com.ingokodba.dragnav.baza
 
 import androidx.room.*
-import com.mygdx.game.Objekt
+import com.mygdx.game.baza.Objekt
 
 @Dao
 interface ObjektDao {

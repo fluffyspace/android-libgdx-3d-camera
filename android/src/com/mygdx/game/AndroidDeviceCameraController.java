@@ -17,6 +17,7 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.FrameLayout;
+import android.widget.SeekBar;
 
 import androidx.camera.view.PreviewView;
 
@@ -43,6 +44,7 @@ public class AndroidDeviceCameraController implements DeviceCameraControl {
         previewView.setLayoutParams(new LayoutParams( LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT ));
         Log.d("ingo", "before " + frameLayout.getChildCount());
         frameLayout.addView(previewView, 0);
+
         Log.d("ingo", "after " + frameLayout.getChildCount());
         for(int index = 0; index < frameLayout.getChildCount(); index++) {
             View nextChild = frameLayout.getChildAt(index);

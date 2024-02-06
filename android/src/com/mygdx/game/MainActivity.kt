@@ -7,30 +7,23 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultCallback
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.rxjava3.RxPreferenceDataStoreBuilder
 import androidx.datastore.rxjava3.RxDataStore
+import androidx.lifecycle.lifecycleScope
+import androidx.room.Room
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
+import com.ingokodba.dragnav.baza.AppDatabase
+import com.mygdx.game.baza.Objekt
 import com.mygdx.game.databinding.ActivityMainBinding
-import io.reactivex.rxjava3.core.Single
-import io.reactivex.rxjava3.functions.Function
-import org.reactivestreams.Subscriber
-import org.reactivestreams.Subscription
+import kotlinx.coroutines.launch
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.MalformedURLException
@@ -40,8 +33,31 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
     lateinit var binding: ActivityMainBinding
     var fusedLocationClient: FusedLocationProviderClient? = null
     var dataStore: RxDataStore<Preferences>? = null
-    var camera_coordinates = DoubleArray(3)
-    var object_coordinates = DoubleArray(3)
+    var camera: Objekt? = null
+    lateinit var objects: List<Objekt>
+    //val cameraDataStoreKey: Preferences.Key<String> = stringPreferencesKey("camera_coordinates")
+
+    lateinit var db: AppDatabase
+    val locationPermissionRequest: ActivityResultLauncher<Array<String>> by lazy {
+        registerForActivityResult<Array<String>, Map<String, Boolean>>(
+            ActivityResultContracts.RequestMultiplePermissions(),
+            ActivityResultCallback<Map<String, Boolean>> { result: Map<String, Boolean> ->
+                val fineLocationGranted = result.getOrDefault(
+                    Manifest.permission.ACCESS_FINE_LOCATION, false
+                )
+                val coarseLocationGranted = result.getOrDefault(
+                    Manifest.permission.ACCESS_COARSE_LOCATION, false
+                )
+                if (fineLocationGranted) {
+                    // Precise location access granted.
+                } else if (coarseLocationGranted) {
+                    // Only approximate location access granted.
+                } else {
+                    // No location access granted.
+                }
+            }
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,24 +67,30 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
         binding.openViewer.setOnClickListener {
             Log.d("ingo", "open viewer")
             val intent = Intent(this@MainActivity, AndroidLauncher::class.java)
-            intent.putExtra("object_coordinates", Gson().toJson(object_coordinates))
-            intent.putExtra("camera_coordinates", Gson().toJson(camera_coordinates))
+            intent.putExtra("camera", Gson().toJson(camera))
             startActivity(intent)
         }
-        binding.objectSetCoordinates.setOnClickListener(View.OnClickListener { updateCoordinates("object") })
-        binding.cameraSetCoordinates.setOnClickListener(View.OnClickListener { updateCoordinates("camera") })
+        binding.cameraSetCoordinates.setOnClickListener {
+            updateCoordinates(){ objekt ->
+                updateEditTexts()
+                /*updateDataStore(
+                    cameraDataStoreKey,
+                    Gson().toJson(objekt)
+                )*/
+            }
+        }
         binding.cameraSetCoordinatesFromEt.setOnClickListener(View.OnClickListener {
-            val coordinates = binding.cameraCoordinatesEt.getText().toString().split(",".toRegex())
+            val coordinates = binding.cameraCoordinatesEt.text.toString().split(",".toRegex())
                 .dropLastWhile { it.isEmpty() }
                 .toTypedArray()
             if (coordinates.size != 3) return@OnClickListener
             try {
-                camera_coordinates = doubleArrayOf(
-                    coordinates[0].toDouble(),
-                    coordinates[1].toDouble(),
-                    coordinates[2].toDouble()
+                camera = Objekt(0,
+                    coordinates[0].toFloat(),
+                    coordinates[1].toFloat(),
+                    coordinates[2].toFloat()
                 )
-                updateDataStore("camera", Gson().toJson(camera_coordinates))
+                //updateDataStore(cameraDataStoreKey, Gson().toJson(camera))
                 updateEditTexts()
             } catch (e: NullPointerException) {
                 e.printStackTrace()
@@ -76,62 +98,21 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
                 e.printStackTrace()
             }
         })
-        binding.objectSetCoordinatesFromEt.setOnClickListener(View.OnClickListener {
-            val coordinates = binding.objectCoordinatesEt.getText().toString().split(",".toRegex())
-                .dropLastWhile { it.isEmpty() }
-                .toTypedArray()
-            if (coordinates.size != 3) return@OnClickListener
-            try {
-                object_coordinates = doubleArrayOf(
-                    coordinates[0].toDouble(),
-                    coordinates[1].toDouble(),
-                    coordinates[2].toDouble()
-                )
-                updateDataStore("object", Gson().toJson(object_coordinates))
-                updateEditTexts()
-            } catch (e: NullPointerException) {
-                e.printStackTrace()
-            } catch (e: NumberFormatException) {
-                e.printStackTrace()
-            }
-        })
-        dataStore = RxPreferenceDataStoreBuilder(this,  /*name=*/"settings").build()
-        //
-        val locationPermissionRequest =
-            registerForActivityResult<Array<String>, Map<String, Boolean>>(
-                ActivityResultContracts.RequestMultiplePermissions(),
-                ActivityResultCallback<Map<String, Boolean>> { result: Map<String, Boolean> ->
-                    val fineLocationGranted = result.getOrDefault(
-                        Manifest.permission.ACCESS_FINE_LOCATION, false
-                    )
-                    val coarseLocationGranted = result.getOrDefault(
-                        Manifest.permission.ACCESS_COARSE_LOCATION, false
-                    )
-                    if (fineLocationGranted != null && fineLocationGranted) {
-                        // Precise location access granted.
-                    } else if (coarseLocationGranted != null && coarseLocationGranted) {
-                        // Only approximate location access granted.
-                    } else {
-                        // No location access granted.
-                    }
-                }
-            )
-        if (ActivityCompat.checkSelfPermission(
-                this@MainActivity,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            locationPermissionRequest.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
+
+        db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "database-name"
+        ).build()
+
+        lifecycleScope.launch {
+            val objektDao = db.objektDao()
+            objects = objektDao.getAll()
+
         }
 
+
+
+        //dataStore = RxPreferenceDataStoreBuilder(this,  /*name=*/"settings").build()
 
         // Get intent, action and MIME type
         val intent = intent
@@ -148,11 +129,32 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
                 AddCoordinateFragment(this).show(supportFragmentManager, "GAME_DIALOG")
             }
         }
-        readFromDataStore()
+
         binding.refresh.setOnClickListener { updateEditTexts() }
     }
 
-    fun updateCoordinates(type: String) {
+    fun hasLocationPermission(): Boolean{
+        if (ActivityCompat.checkSelfPermission(
+                this@MainActivity,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED || ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            locationPermissionRequest.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+            return false
+        }
+        return true
+    }
+
+    fun updateCoordinates(onLocationResult: (Objekt) -> Unit) {
+        if(!hasLocationPermission()) return;
         Log.d("ingo", "updateCoordinates")
         if (ActivityCompat.checkSelfPermission(
                 this@MainActivity,
@@ -170,19 +172,8 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
                     if (location != null) {
                         Log.d("ingo", "not null")
                         // Logic to handle location object
-                        if (type == "object") {
-                            object_coordinates =
-                                doubleArrayOf(location.latitude, location.longitude, 0.0)
-                            updateEditTexts()
-                        } else {
-                            camera_coordinates =
-                                doubleArrayOf(location.latitude, location.longitude, 0.0)
-                            updateEditTexts()
-                        }
-                        updateDataStore(
-                            type,
-                            Gson().toJson(doubleArrayOf(location.latitude, location.longitude, 0.0))
-                        )
+                        onLocationResult(Objekt(0,
+                            location.latitude.toFloat(), location.longitude.toFloat(), 0f))
                         Toast.makeText(
                             this@MainActivity,
                             "Lokacija postavljena.",
@@ -197,47 +188,24 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
     }
 
     fun updateEditTexts() {
-        if (object_coordinates.size == 3) {
-            Log.d("ingo", "object coordinates da")
-            val text =
-                object_coordinates[0].toString() + ", " + object_coordinates[1] + ", " + object_coordinates[2]
-            binding.objectCoordinatesEt!!.setText(text)
-            binding.objectCoordinates!!.text = text
-        }
-        if (camera_coordinates.size == 3) {
+        if (camera != null) {
             Log.d("ingo", "camera coordinates da")
             val text =
-                camera_coordinates[0].toString() + ", " + camera_coordinates[1] + ", " + camera_coordinates[2]
-            binding.cameraCoordinatesEt!!.setText(text)
-            binding.cameraCoordinates!!.text = text
+                camera!!.x.toString() + ", " + camera!!.y + ", " + camera!!.z
+            binding.cameraCoordinatesEt.setText(text)
+            binding.cameraCoordinates.text = text
         }
     }
 
-    fun readFromDataStore() {
-        val object_key: Preferences.Key<String> = stringPreferencesKey("object_coordinates")
-        val camera_key: Preferences.Key<String> = stringPreferencesKey("camera_coordinates")
-        val object_flow = this.dataStore!!.data().map{prefs: Preferences -> prefs[object_key] ?: "" }
-        object_flow.subscribe(object : Subscriber<String> {
-            override fun onSubscribe(s: Subscription) {
-                s.request(Long.MAX_VALUE) // Request all items
-            }
-
-            override fun onNext(s: String?) {
-                object_coordinates = Gson().fromJson(s, DoubleArray::class.java)
-                updateEditTexts()
-            }
-
-            override fun onError(t: Throwable) {}
-            override fun onComplete() {}
-        })
-        val cameraFlow = dataStore!!.data().map{prefs: Preferences -> prefs[camera_key] ?: "" }
+    /*fun readFromDataStore() {
+        val cameraFlow = dataStore!!.data().map{prefs: Preferences -> prefs[cameraDataStoreKey] ?: "" }
         cameraFlow.subscribe(object : Subscriber<String?> {
             override fun onSubscribe(s: Subscription) {
                 s.request(Long.MAX_VALUE) // Request all items
             }
 
             override fun onNext(s: String?) {
-                camera_coordinates = Gson().fromJson(s, DoubleArray::class.java)
+                camera = Gson().fromJson(s, Objekt::class.java)
                 updateEditTexts()
             }
 
@@ -246,20 +214,14 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
         })
     }
 
-    fun updateDataStore(type: String, value: String) {
-        val INTEGER_KEY: Preferences.Key<String>
-        if (type == "object") {
-            INTEGER_KEY = stringPreferencesKey("object_coordinates")
-        } else {
-            INTEGER_KEY = stringPreferencesKey("camera_coordinates")
-        }
+    fun updateDataStore(INTEGER_KEY: Preferences.Key<String>, value: String) {
         val updateResult = dataStore!!.updateDataAsync { prefsIn: Preferences ->
             val mutablePreferences = prefsIn.toMutablePreferences()
             mutablePreferences.set(INTEGER_KEY, value)
             Single.just<Preferences>(mutablePreferences)
         }
         // The update is completed once updateResult is completed.
-    }
+    }*/
 
     override fun onResume() {
         super.onResume()
@@ -269,8 +231,8 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
         super.onPause()
     }
 
-    override fun add(type: String) {
-        updateCoordinates(type)
+    override fun onCoordinatesPassed(isCamera: Boolean) {
+        //updateCoordinates(type)
     }
 
     companion object {
