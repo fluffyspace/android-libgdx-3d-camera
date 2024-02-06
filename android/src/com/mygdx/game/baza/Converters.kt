@@ -1,4 +1,4 @@
-package com.ingokodba.dragnav.baza
+package com.mygdx.game.baza
 
 import androidx.room.TypeConverter
 import com.google.gson.Gson

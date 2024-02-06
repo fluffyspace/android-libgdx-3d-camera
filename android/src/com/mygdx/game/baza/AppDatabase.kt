@@ -1,13 +1,11 @@
-package com.ingokodba.dragnav.baza
+package com.mygdx.game.baza
 
 import android.content.Context
 import androidx.room.*
-import com.mygdx.game.baza.Objekt
 import java.lang.ref.WeakReference
 
 
 @Database(entities = arrayOf(Objekt::class), version = 1, exportSchema = true)
-@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun objektDao(): ObjektDao

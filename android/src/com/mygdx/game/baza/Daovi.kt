@@ -1,4 +1,4 @@
-package com.ingokodba.dragnav.baza
+package com.mygdx.game.baza
 
 import androidx.room.*
 import com.mygdx.game.baza.Objekt

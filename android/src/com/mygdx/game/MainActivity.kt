@@ -20,9 +20,10 @@ import androidx.room.Room
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
-import com.ingokodba.dragnav.baza.AppDatabase
+import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
 import com.mygdx.game.databinding.ActivityMainBinding
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -104,10 +105,9 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
             AppDatabase::class.java, "database-name"
         ).build()
 
-        lifecycleScope.launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val objektDao = db.objektDao()
             objects = objektDao.getAll()
-
         }
 
 
