@@ -1,36 +1,53 @@
 package com.mygdx.game
 
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.SeekBar
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import com.badlogic.gdx.backends.android.AndroidApplication
+import androidx.core.graphics.alpha
+import androidx.core.graphics.blue
+import androidx.core.graphics.green
+import androidx.core.graphics.red
+import androidx.lifecycle.lifecycleScope
+import androidx.room.Room
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.googlecardboard.HeadTracker
 import com.mygdx.game.overr.AndroidApplicationOverrided
-import java.lang.reflect.Type
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
     private var mHeadTracker: HeadTracker? = null
     private var origWidth = 0
     private var origHeight = 0
-    var fov: Int = 50
+    var fov: Int = 34
     var gson = Gson()
     lateinit var fovTv: TextView
+    lateinit var moveButton: ImageView
+    lateinit var rotateButton: ImageView
+    lateinit var scaleButton: ImageView
+    var transformButtons: List<ImageView> = listOf()
 
     private val activityResultLauncher =
         registerForActivityResult(
@@ -52,15 +69,23 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         }
 
     lateinit var cameraControl: AndroidDeviceCameraController
+    lateinit var editModeLayout: LinearLayout
+    lateinit var saveMenuLayout: LinearLayout
+
+    lateinit var objects: MutableList<Objekt>
+    lateinit var game: MyGdxGame
+    lateinit var db: AppDatabase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mHeadTracker = HeadTracker(this)
-        val config = AndroidApplicationConfiguration()
+
+        lateinit var config: AndroidApplicationConfiguration
+        config = AndroidApplicationConfiguration()
         config.useAccelerometer = false
         config.useCompass = false
         config.useGyroscope = false
-        cameraControl = AndroidDeviceCameraController(this)
+        cameraControl = AndroidDeviceCameraController(this@AndroidLauncher)
         //config.useGL30 = true;
         // we need to change the default pixel format - since it does not include an alpha channel
         // we need the alpha channel so the camera preview will be seen behind the GL scene
@@ -69,26 +94,84 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         config.b = 8
         config.a = 8
         config.useGL30 = false
+
+
         val intent = intent
-        val camera_coordinates = intent.getStringExtra("camera_coordinates")
-        val object_coordinates = intent.getStringExtra("object_coordinates")
-        val game = MyGdxGame(
-            this,
-            gson.fromJson(camera_coordinates, DoubleArray::class.java as Type),
-            gson.fromJson(object_coordinates, DoubleArray::class.java as Type),
-            cameraControl
-        )
+        val cameraIntentExtra = intent.getStringExtra("camera")
+        val objectsIntentExtra = intent.getStringExtra("objects")
+        objects = gson.fromJson(objectsIntentExtra, object : TypeToken<ArrayList<Objekt>>() {}.type)
+        for(objekt in objects){
+            objekt.libgdxcolor = colorStringToLibgdxColor(Color.valueOf(objekt.color))
+        }
+
+        game = MyGdxGame(
+            this@AndroidLauncher,
+            gson.fromJson(cameraIntentExtra, Objekt::class.java),
+            objects,
+            cameraControl,
+            fov
+        ){ editModeEnabled ->
+            lifecycleScope.launch {
+                withContext(Dispatchers.Main){
+                    editModeLayout.visibility = if(editModeEnabled) View.VISIBLE else View.GONE
+                }
+            }
+        }
         initialize(game, config)
+        initializeLayouts()
+
+        db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "database-name"
+        ).build()
+    }
+
+    fun initializeLayouts(){
         fovTv = this.fieldOfViewLayout.findViewById(R.id.fovValueTv)
         this.fieldOfViewLayout.findViewById<Button>(R.id.fovUp).setOnClickListener {
             fov++
-            fovTv.setText(fov.toString())
+            fovTv.text = fov.toString()
             game.fov = fov
         }
         this.fieldOfViewLayout.findViewById<Button>(R.id.fovDown).setOnClickListener {
             fov--
-            fovTv.setText(fov.toString())
+            fovTv.text = fov.toString()
             game.fov = fov
+        }
+        fovTv.text = fov.toString()
+        saveMenuLayout = this.fieldOfViewLayout.findViewById<LinearLayout>(R.id.save_menu)
+        editModeLayout = this.fieldOfViewLayout.findViewById<LinearLayout>(R.id.edit_mode)
+        editModeLayout.visibility = View.GONE
+        moveButton = editModeLayout.findViewById<ImageView>(R.id.move)
+        rotateButton = editModeLayout.findViewById<ImageView>(R.id.rotate)
+        scaleButton = editModeLayout.findViewById<ImageView>(R.id.scale)
+        transformButtons = listOf(moveButton, rotateButton, scaleButton)
+        moveButton.setOnClickListener {
+            if(game.editMode == MyGdxGame.EditMode.move){
+                unselectTransformButtons()
+            }
+            game.editMode = MyGdxGame.EditMode.move
+            pickedTransformButton(it)
+        }
+        rotateButton.setOnClickListener {
+            if(game.editMode == MyGdxGame.EditMode.move){
+                unselectTransformButtons()
+            }
+            game.editMode = MyGdxGame.EditMode.rotate
+            pickedTransformButton(it)
+        }
+        scaleButton.setOnClickListener {
+            if(game.editMode == MyGdxGame.EditMode.move){
+                unselectTransformButtons()
+            }
+            game.editMode = MyGdxGame.EditMode.scale
+            pickedTransformButton(it)
+        }
+        saveMenuLayout.findViewById<ImageView>(R.id.save).setOnClickListener {
+            saveChanges()
+        }
+        saveMenuLayout.findViewById<ImageView>(R.id.discard_changes).setOnClickListener {
+            discardChanges()
         }
         if(this.frameLayout is FrameLayout){
             Log.d("ingo", "framelayout")
@@ -114,6 +197,54 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
             startCamera()
         } else {
             requestPermissions()
+        }
+    }
+
+    fun discardChanges(){
+        lifecycleScope.launch(Dispatchers.IO) {
+            val objektDao = db.objektDao()
+            val objekti = objektDao.getAll().toMutableList()
+
+            objects = gson.fromJson(gson.toJson(objekti), object : TypeToken<ArrayList<Objekt>>() {}.type)
+            game.objects = objects
+            game.objectsUpdated()
+        }
+    }
+
+    fun saveChanges(){
+        lifecycleScope.launch(Dispatchers.IO) {
+            val objektDao = db.objektDao()
+
+            for(objekt in objects){
+                if(objekt.changed){
+                    objektDao.update(
+                        com.mygdx.game.baza.Objekt(
+                            objekt.id,
+                            (-(objekt.diffX/game.scalar)+game.camera.x),
+                            (-(objekt.diffZ/game.scalar)+game.camera.z),
+                            (-(objekt.diffY/game.scalar)+game.camera.y),
+                            objekt.name,
+                            objekt.size,
+                            objekt.rotationX,
+                            objekt.rotationY,
+                            objekt.rotationZ,
+                            objekt.color)
+                    )
+                }
+            }
+        }
+    }
+
+    fun unselectTransformButtons(){
+        for(button in transformButtons){
+            button.setBackgroundColor(Color.WHITE)
+            game.editMode = null
+        }
+    }
+
+    fun pickedTransformButton(view: View){
+        for(button in transformButtons){
+            button.setBackgroundColor(if(view != button as View) Color.WHITE else Color.YELLOW)
         }
     }
 
@@ -201,6 +332,7 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         mHeadTracker!!.startTracking()
     }
 
+
     override fun onPause() {
         super.onPause()
         mHeadTracker!!.stopTracking()
@@ -210,5 +342,9 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         val floats1 = FloatArray(16)
         mHeadTracker!!.getLastHeadView(floats1, 0)
         return floats1
+    }
+
+    fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color{
+        return com.badlogic.gdx.graphics.Color(color.red(), color.green(), color.blue(), color.alpha())
     }
 }

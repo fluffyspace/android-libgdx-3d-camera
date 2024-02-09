@@ -1,27 +1,81 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="vertical">
-    <TextView
-        android:id="@+id/fovValueTv"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
-    <LinearLayout
-        android:layout_width="match_parent"
+    android:orientation="horizontal"
+    android:layout_gravity="bottom"
+    android:gravity="bottom"
+    android:padding="10dp">
+    <LinearLayout 
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-            android:id="@+id/fovDown"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+        android:orientation="vertical">
+        <TextView
+            android:id="@+id/fovValueTv"
+            android:text="FOV: "
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="FOV -"/>
+            android:textAlignment="center"
+            android:gravity="center"/>
         <Button
             android:id="@+id/fovUp"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="FOV +"/>
+        <Button
+            android:id="@+id/fovDown"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="FOV -"/>
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/edit_mode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="visible">
+        <ImageView
+            android:id="@+id/move"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:src="@drawable/move"
+            android:layout_marginLeft="10dp"
+            android:background="#fff"/>
+        <ImageView
+            android:id="@+id/rotate"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:src="@drawable/rotate"
+            android:layout_marginLeft="10dp"
+            android:background="#fff"/>
+        <ImageView
+            android:id="@+id/scale"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:src="@drawable/scale"
+            android:layout_marginLeft="10dp"
+            android:background="#fff"/>
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/save_menu"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="visible">
+        <ImageView
+            android:id="@+id/save"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:src="@drawable/save"
+            android:layout_marginLeft="10dp"
+            android:background="#fff"/>
+        <ImageView
+            android:id="@+id/discard_changes"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:src="@drawable/delete_history"
+            android:layout_marginLeft="10dp"
+            android:background="#fff"/>
     </LinearLayout>
 </LinearLayout>

@@ -4,100 +4,79 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:padding="10dp">
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#000000"/>
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Camera coordinates: "
-        android:textSize="20sp"/>
-    <TextView
-        android:id="@+id/camera_coordinates"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="x, y, z"/>
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Latitude, longidute">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/camera_coordinates_et"
+        android:text="Camera coordinates"
+        android:textSize="18sp"/>
+        <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-    </com.google.android.material.textfield.TextInputLayout>
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-                android:id="@+id/camera_set_coordinates_from_et"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="Get from text"
-                android:padding="20dp"/>
-        <Button
-            android:id="@+id/camera_set_coordinates"
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="Get from current location"
-            android:padding="20dp"/>
-    </LinearLayout>
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#000000"/>
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Object coordinates: "
-        android:textSize="20sp"/>
-    <TextView
-        android:id="@+id/object_coordinates"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="x, y, z"/>
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Latitude, longidute">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/object_coordinates_et"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-    </com.google.android.material.textfield.TextInputLayout>
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button
-            android:id="@+id/object_set_coordinates_from_et"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="Get from text"
-            android:padding="20dp"/>
-        <Button
-            android:id="@+id/object_set_coordinates"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="Get from current location"
-            android:padding="20dp"/>
-    </LinearLayout>
+            android:hint="x, y, z">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/camera_coordinates_et"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </com.google.android.material.textfield.TextInputLayout>
     <Button
-        android:id="@+id/refresh"
-        android:layout_width="wrap_content"
+        android:id="@+id/camera_set_coordinates_from_et"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="refresh"/>
+        android:layout_gravity="center"
+        android:text="From text above"
+        android:textAllCaps="false"
+        android:layout_alignParentRight="true"
+        android:padding="20dp"/>
+    <Button
+        android:id="@+id/camera_set_coordinates"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="Set to current location"
+        android:textAllCaps="false"
+        android:padding="20dp"/>
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?android:attr/colorAccent"
+        android:layout_marginVertical="10dp"/>
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Objects"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="10dp"/>
+    <TextView
+        android:id="@+id/no_objects"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No objects in database."
+        android:textSize="15sp"
+        android:gravity="center"
+        android:layout_marginBottom="10dp"
+        android:visibility="gone"/>
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="100dp"/>
+    <Button
+        android:id="@+id/add_object"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAllCaps="false"
+        android:text="New object"
+        android:padding="20dp"/>
     <Button
         android:id="@+id/open_viewer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:text="Open viewer"
+        android:layout_marginTop="20dp"
+        android:text="Open AR"
+        android:textAllCaps="false"
         android:padding="20dp"/>
 </LinearLayout>

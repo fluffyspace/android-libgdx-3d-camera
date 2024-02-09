@@ -3,6 +3,7 @@ package com.mygdx.game
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -13,9 +14,15 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.graphics.alpha
+import androidx.core.graphics.blue
+import androidx.core.graphics.green
+import androidx.core.graphics.red
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.rxjava3.RxDataStore
+import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.room.Room
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -25,17 +32,21 @@ import com.mygdx.game.baza.Objekt
 import com.mygdx.game.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
+import java.util.Arrays
 
-class MainActivity : AppCompatActivity(), CoordinateAddListener {
+class MainActivity : AppCompatActivity(), CoordinateAddListener,
+    AddNewObjectDialog.AddNewObjectDialogListener, ObjectsAdapter.ObjectClickListener {
     lateinit var binding: ActivityMainBinding
     var fusedLocationClient: FusedLocationProviderClient? = null
     var dataStore: RxDataStore<Preferences>? = null
     var camera: Objekt? = null
-    lateinit var objects: List<Objekt>
+    lateinit var objects: MutableList<Objekt>
+    var objectsAdapter: ObjectsAdapter? = null
     //val cameraDataStoreKey: Preferences.Key<String> = stringPreferencesKey("camera_coordinates")
 
     lateinit var db: AppDatabase
@@ -69,6 +80,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
             Log.d("ingo", "open viewer")
             val intent = Intent(this@MainActivity, AndroidLauncher::class.java)
             intent.putExtra("camera", Gson().toJson(camera))
+            intent.putExtra("objects", Gson().toJson(objects))
             startActivity(intent)
         }
         binding.cameraSetCoordinates.setOnClickListener {
@@ -80,25 +92,16 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
                 )*/
             }
         }
-        binding.cameraSetCoordinatesFromEt.setOnClickListener(View.OnClickListener {
-            val coordinates = binding.cameraCoordinatesEt.text.toString().split(",".toRegex())
-                .dropLastWhile { it.isEmpty() }
-                .toTypedArray()
-            if (coordinates.size != 3) return@OnClickListener
-            try {
-                camera = Objekt(0,
-                    coordinates[0].toFloat(),
-                    coordinates[1].toFloat(),
-                    coordinates[2].toFloat()
-                )
-                //updateDataStore(cameraDataStoreKey, Gson().toJson(camera))
-                updateEditTexts()
-            } catch (e: NullPointerException) {
-                e.printStackTrace()
-            } catch (e: NumberFormatException) {
-                e.printStackTrace()
-            }
-        })
+        binding.cameraSetCoordinatesFromEt.setOnClickListener {
+            camera = textToObject(binding.cameraCoordinatesEt.text.toString())
+            updateEditTexts()
+        }
+        camera = Objekt(0, 0f, 0f, 0f)
+        updateEditTexts()
+        binding.addObject.setOnClickListener {
+            val addNewObjectDialog = AddNewObjectDialog()
+            addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
+        }
 
         db = Room.databaseBuilder(
             applicationContext,
@@ -107,14 +110,16 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
 
         lifecycleScope.launch(Dispatchers.IO) {
             val objektDao = db.objektDao()
-            objects = objektDao.getAll()
+            objects = objektDao.getAll().toMutableList()
+            withContext(Dispatchers.Main){
+                objectsAdapter = ObjectsAdapter(objects, this@MainActivity)
+                binding.recyclerView.adapter = objectsAdapter
+                binding.recyclerView.layoutManager = LinearLayoutManager(this@MainActivity)
+                checkObjectsCount()
+            }
         }
 
-
-
-        //dataStore = RxPreferenceDataStoreBuilder(this,  /*name=*/"settings").build()
-
-        // Get intent, action and MIME type
+        // Get text passed to app for adding new objects
         val intent = intent
         val action = intent.action
         val type = intent.type
@@ -129,8 +134,27 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
                 AddCoordinateFragment(this).show(supportFragmentManager, "GAME_DIALOG")
             }
         }
+    }
 
-        binding.refresh.setOnClickListener { updateEditTexts() }
+    fun textToObject(text: String): com.mygdx.game.baza.Objekt?{
+        val coordinates = text.split(",".toRegex())
+            .dropLastWhile { it.isEmpty() }
+            .toTypedArray()
+        Log.d("ingo", coordinates.contentToString())
+        if (coordinates.size != 3) return null
+        try {
+            return com.mygdx.game.baza.Objekt(0,
+                coordinates[0].toFloat(),
+                coordinates[1].toFloat(),
+                coordinates[2].toFloat()
+            )
+            //updateDataStore(cameraDataStoreKey, Gson().toJson(camera))
+        } catch (e: NullPointerException) {
+            e.printStackTrace()
+        } catch (e: NumberFormatException) {
+            e.printStackTrace()
+        }
+        return null
     }
 
     fun hasLocationPermission(): Boolean{
@@ -193,8 +217,11 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
             val text =
                 camera!!.x.toString() + ", " + camera!!.y + ", " + camera!!.z
             binding.cameraCoordinatesEt.setText(text)
-            binding.cameraCoordinates.text = text
         }
+    }
+
+    fun checkObjectsCount(){
+        binding.noObjects.visibility = if(objects.isEmpty()) View.VISIBLE else View.GONE
     }
 
     /*fun readFromDataStore() {
@@ -260,6 +287,44 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener {
                 e.printStackTrace()
             }
             return s3
+        }
+    }
+
+
+
+    override fun onClickAddObject(coordinates: String, name: String, color: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            textToObject(coordinates)?.apply {
+                this.name = name
+                if(color != "") {
+                    try {
+                        this.color = Color.parseColor(color)
+                    }catch(e: NumberFormatException){
+
+                    }
+                }
+            }?.let { objekt ->
+                Log.d("ingo", "dodan objekt")
+                db.objektDao().insertAll(objekt)
+                objects.add(objekt)
+                withContext(Dispatchers.Main){
+                    objectsAdapter?.dataSet?.size?.let {size ->
+                        objectsAdapter?.notifyItemInserted(size-1)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onClickOnObject(objekt: Objekt) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            db.objektDao().delete(objekt)
+            withContext(Dispatchers.Main){
+                objectsAdapter?.dataSet?.indexOf(objekt)?.let {index ->
+                    objectsAdapter?.notifyItemRemoved(index)
+                    objects.remove(objekt)
+                }
+            }
         }
     }
 }
