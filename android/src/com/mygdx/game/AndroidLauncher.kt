@@ -9,22 +9,16 @@ import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.alpha
-import androidx.core.graphics.blue
-import androidx.core.graphics.green
-import androidx.core.graphics.red
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
@@ -43,8 +37,11 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
     private var origHeight = 0
     var fov: Int = 34
     var gson = Gson()
+    lateinit var camHeight: TextView
     lateinit var fovTv: TextView
+    lateinit var travelExplore: ImageView
     lateinit var moveButton: ImageView
+    lateinit var moveVerticalButton: ImageView
     lateinit var rotateButton: ImageView
     lateinit var scaleButton: ImageView
     var transformButtons: List<ImageView> = listOf()
@@ -100,23 +97,35 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         val cameraIntentExtra = intent.getStringExtra("camera")
         val objectsIntentExtra = intent.getStringExtra("objects")
         objects = gson.fromJson(objectsIntentExtra, object : TypeToken<ArrayList<Objekt>>() {}.type)
-        for(objekt in objects){
-            objekt.libgdxcolor = colorStringToLibgdxColor(Color.valueOf(objekt.color))
-        }
+        convertObjectColors(objects)
 
         game = MyGdxGame(
             this@AndroidLauncher,
             gson.fromJson(cameraIntentExtra, Objekt::class.java),
             objects,
             cameraControl,
-            fov
-        ){ editModeEnabled ->
-            lifecycleScope.launch {
-                withContext(Dispatchers.Main){
-                    editModeLayout.visibility = if(editModeEnabled) View.VISIBLE else View.GONE
+            fov, { editModeEnabled ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.Main){
+                        editModeLayout.visibility = if(editModeEnabled) View.VISIBLE else View.GONE
+                    }
+                }
+            },
+            { change ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.Main) {
+                        saveMenuLayout.visibility = if (change) View.VISIBLE else View.GONE
+                    }
+                }
+            },
+            { height ->
+                lifecycleScope.launch {
+                    withContext(Dispatchers.Main) {
+                        camHeight.text = "Height: %.2f".format(height)
+                    }
                 }
             }
-        }
+        )
         initialize(game, config)
         initializeLayouts()
 
@@ -126,43 +135,71 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         ).build()
     }
 
+    fun convertObjectColors(objekti: List<Objekt>){
+        for(objekt in objekti){
+            objekt.libgdxcolor = colorStringToLibgdxColor(Color.valueOf(objekt.color))
+        }
+    }
+
     fun initializeLayouts(){
         fovTv = this.fieldOfViewLayout.findViewById(R.id.fovValueTv)
-        this.fieldOfViewLayout.findViewById<Button>(R.id.fovUp).setOnClickListener {
+        camHeight = this.fieldOfViewLayout.findViewById(R.id.cam_height)
+        travelExplore = this.fieldOfViewLayout.findViewById(R.id.no_distance)
+        travelExplore.setOnClickListener {
+            game.noDistance = !game.noDistance
+            it.setBackgroundColor(if(game.noDistance) Color.YELLOW else Color.WHITE)
+        }
+        this.fieldOfViewLayout.findViewById<TextView>(R.id.fovUp).setOnClickListener {
             fov++
-            fovTv.text = fov.toString()
+            fovTv.text = "FOV: $fov"
             game.fov = fov
         }
-        this.fieldOfViewLayout.findViewById<Button>(R.id.fovDown).setOnClickListener {
+        this.fieldOfViewLayout.findViewById<TextView>(R.id.fovDown).setOnClickListener {
             fov--
-            fovTv.text = fov.toString()
+            fovTv.text = "FOV: $fov"
             game.fov = fov
         }
-        fovTv.text = fov.toString()
+        fovTv.text = "FOV: $fov"
+        this.fieldOfViewLayout.findViewById<ImageView>(R.id.close).setOnClickListener {
+            finish()
+        }
         saveMenuLayout = this.fieldOfViewLayout.findViewById<LinearLayout>(R.id.save_menu)
         editModeLayout = this.fieldOfViewLayout.findViewById<LinearLayout>(R.id.edit_mode)
+        saveMenuLayout.visibility = View.GONE
         editModeLayout.visibility = View.GONE
         moveButton = editModeLayout.findViewById<ImageView>(R.id.move)
+        moveVerticalButton = editModeLayout.findViewById<ImageView>(R.id.move_up_down)
         rotateButton = editModeLayout.findViewById<ImageView>(R.id.rotate)
         scaleButton = editModeLayout.findViewById<ImageView>(R.id.scale)
-        transformButtons = listOf(moveButton, rotateButton, scaleButton)
+        transformButtons = listOf(moveButton, moveVerticalButton, rotateButton, scaleButton)
         moveButton.setOnClickListener {
             if(game.editMode == MyGdxGame.EditMode.move){
                 unselectTransformButtons()
+                return@setOnClickListener
             }
             game.editMode = MyGdxGame.EditMode.move
             pickedTransformButton(it)
         }
-        rotateButton.setOnClickListener {
-            if(game.editMode == MyGdxGame.EditMode.move){
+        moveVerticalButton.setOnClickListener {
+            if(game.editMode == MyGdxGame.EditMode.move_vertical){
                 unselectTransformButtons()
+                return@setOnClickListener
+            }
+            game.editMode = MyGdxGame.EditMode.move_vertical
+            pickedTransformButton(it)
+        }
+        rotateButton.setOnClickListener {
+            if(game.editMode == MyGdxGame.EditMode.rotate){
+                unselectTransformButtons()
+                return@setOnClickListener
             }
             game.editMode = MyGdxGame.EditMode.rotate
             pickedTransformButton(it)
         }
         scaleButton.setOnClickListener {
-            if(game.editMode == MyGdxGame.EditMode.move){
+            if(game.editMode == MyGdxGame.EditMode.scale){
                 unselectTransformButtons()
+                return@setOnClickListener
             }
             game.editMode = MyGdxGame.EditMode.scale
             pickedTransformButton(it)
@@ -202,12 +239,20 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
 
     fun discardChanges(){
         lifecycleScope.launch(Dispatchers.IO) {
-            val objektDao = db.objektDao()
+            /*val objektDao = db.objektDao()
             val objekti = objektDao.getAll().toMutableList()
 
-            objects = gson.fromJson(gson.toJson(objekti), object : TypeToken<ArrayList<Objekt>>() {}.type)
-            game.objects = objects
-            game.objectsUpdated()
+            val tmpObjects = gson.fromJson<ArrayList<Objekt>>(gson.toJson(objekti), object : TypeToken<ArrayList<Objekt>>() {}.type)
+            convertObjectColors(tmpObjects)
+            game.noRender = true
+            delay(100)*/
+
+            withContext(Dispatchers.Main){
+                //objects = tmpObjects
+                game.objectsUpdated()
+                saveMenuLayout.visibility = View.GONE
+            }
+            game.noRender = false
         }
     }
 
@@ -215,7 +260,7 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         lifecycleScope.launch(Dispatchers.IO) {
             val objektDao = db.objektDao()
 
-            for(objekt in objects){
+            for(objekt in game.objects){
                 if(objekt.changed){
                     objektDao.update(
                         com.mygdx.game.baza.Objekt(
@@ -231,6 +276,9 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
                             objekt.color)
                     )
                 }
+            }
+            withContext(Dispatchers.Main){
+                saveMenuLayout.visibility = View.GONE
             }
         }
     }
@@ -252,7 +300,6 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         activityResultLauncher.launch(REQUIRED_PERMISSIONS)
     }
 
-
     companion object {
         private const val TAG = "CameraXApp"
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
@@ -267,12 +314,10 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
             }.toTypedArray()
     }
 
-
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
             baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
-
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)

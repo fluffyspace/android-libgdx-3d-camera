@@ -26,6 +26,7 @@ import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ExtendViewport
 import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -39,7 +40,9 @@ class MyGdxGame (
     var objects: MutableList<Objekt>,
     var deviceCameraControl: DeviceCameraControl,
     var fov: Int,
-    var toggleEditMode: (Boolean) -> Unit
+    var toggleEditMode: (Boolean) -> Unit,
+    var onChange: (Boolean) -> Unit,
+    var camHeightChange: (Float) -> Unit,
 ) : ApplicationAdapter() {
     private var cam: PerspectiveCamera? = null
     private var batch: SpriteBatch? = null
@@ -62,8 +65,10 @@ class MyGdxGame (
     var worldUpDownTmp = 0f
     var worldUpDown = 0f
     var modelMoving: MyPolar? = null
+    var modelMovingVertical: Float = 0f
     var modelRotatingY: Float = 0f
     var modelRotatingX: Float = 0f
+    var scalingObject: Float = 0f
     val dragTreshold = 50
     val upVector = Vector3(0f, 1f, 0f)
     val xVector = Vector3(1f, 0f, 0f)
@@ -71,6 +76,8 @@ class MyGdxGame (
     var textXY: MyPoint? = null
     var text: String? = null
     var fontCache: BitmapFontCache? = null
+    var noRender: Boolean = false
+    var noDistance: Boolean = false
 
     data class MyPoint(var x: Float = 0f, var y: Float = 0f)
     data class MyPolar(var radius: Float = 0f, var degrees: Float = 0f)
@@ -82,6 +89,7 @@ class MyGdxGame (
 
     enum class EditMode {
         move,
+        move_vertical,
         rotate,
         scale
     }
@@ -119,27 +127,40 @@ class MyGdxGame (
         )
         modelBatch = ModelBatch()
         batch = SpriteBatch()
-        objectsUpdated()
+        createInstances()
     }
 
     val scalar = 10000f
 
-    fun objectsUpdated(){
+    fun createInstances(){
+        selectedObject = -1
         instances = mutableListOf()
         for(objekt in objects){
             objekt.diffX = (camera.x - objekt.x) * scalar
             objekt.diffZ = (camera.y - objekt.y) * scalar
             objekt.diffY = (camera.z - objekt.z) * scalar
             println("Dobio sam $objekt i ")
-            selectedObject = -1
             toggleEditMode(false)
             instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
+        }
+        camHeightChange(camera.y)
+    }
+
+    fun objectsUpdated(){
+        selectedObject = -1
+        textXY = null
+        for((index, objekt) in objects.withIndex()){
+            objekt.diffX = (camera.x - objekt.x) * scalar
+            objekt.diffZ = (camera.y - objekt.y) * scalar
+            objekt.diffY = (camera.z - objekt.z) * scalar
+            println("Dobio sam $objekt i ")
+            toggleEditMode(false)
+            //instances[index].add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
         }
     }
 
     fun generateModelForObject(color: Color): Model{
-        val modelBuilder = ModelBuilder()
-        return modelBuilder.createBox(
+        return ModelBuilder().createBox(
             5f, 5f, 5f,
             Material(ColorAttribute.createDiffuse(color)),
             (
@@ -148,6 +169,7 @@ class MyGdxGame (
     }
 
     override fun render() {
+        if(noRender) return
         touchHandler()
 
         cam!!.fieldOfView = fov.toFloat()
@@ -160,71 +182,127 @@ class MyGdxGame (
         Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
         quat = Quaternion(-quat.z, quat.y, quat.x, quat.w)
 
+
         for((index, objekt) in objects.withIndex()){
-            try {
+            if(noDistance) {
                 instances[index].transform.set(Matrix4())
-                if(selectedObject != index) {
-                    instances[index].transform.mul(
-                        Matrix4().rotate(quat)
-                            .rotate(upVector, worldRotation+worldRotationTmp)
-                            .translate(objekt.diffX, objekt.diffY+worldUpDown+worldUpDownTmp, objekt.diffZ)
-                            .rotate(upVector, objekt.rotationY)
-                            .rotate(xVector, objekt.rotationX)
-                    )
-                } else {
-                    lateinit var translatingVector: Vector3
-                    if(modelMoving != null) {
-                        val myPoint = getObjectsXZAfterRot(objekt)
-                        translatingVector = Vector3(
-                            myPoint.x,
-                            objekt.diffY + worldUpDown + worldUpDownTmp,
-                            myPoint.y
+                val myPoint = getObjectsWithLimitedDistance(objekt)
+                val translatingVector = Vector3(
+                    myPoint.x,
+                    myPoint.y + worldUpDown + worldUpDownTmp,
+                    myPoint.z
+                )
+                instances[index].transform.mul(
+                    Matrix4().rotate(quat)
+                        .rotate(upVector, worldRotation + worldRotationTmp)
+                        .translate(translatingVector)
+                        .rotate(upVector, objekt.rotationY)
+                        .rotate(xVector, objekt.rotationX)
+                        .scale(
+                            objekt.size,
+                            objekt.size,
+                            objekt.size
+                        )
+                )
+            } else {
+                try {
+                    instances[index].transform.set(Matrix4())
+                    if (selectedObject != index) {
+                        instances[index].transform.mul(
+                            Matrix4().rotate(quat)
+                                .rotate(upVector, worldRotation + worldRotationTmp)
+                                .translate(
+                                    objekt.diffX,
+                                    objekt.diffY + worldUpDown + worldUpDownTmp,
+                                    objekt.diffZ
+                                )
+                                .rotate(upVector, objekt.rotationY)
+                                .rotate(xVector, objekt.rotationX)
+                                .scale(objekt.size, objekt.size, objekt.size)
                         )
                     } else {
-                        translatingVector = Vector3(
-                            objekt.diffX,
-                            objekt.diffY + worldUpDown + worldUpDownTmp,
-                            objekt.diffZ
+                        lateinit var translatingVector: Vector3
+                        if (modelMoving != null) {
+                            val myPoint = getObjectsXZAfterRot(objekt)
+                            translatingVector = Vector3(
+                                myPoint.x,
+                                objekt.diffY + worldUpDown + worldUpDownTmp,
+                                myPoint.y
+                            )
+                        } else {
+                            translatingVector = Vector3(
+                                objekt.diffX,
+                                objekt.diffY + worldUpDown + worldUpDownTmp + modelMovingVertical,
+                                objekt.diffZ
+                            )
+                        }
+                        instances[index].transform.mul(
+                            Matrix4().rotate(quat)
+                                .rotate(upVector, worldRotation + worldRotationTmp)
+                                .translate(translatingVector)
+                                .rotate(upVector, modelRotatingY + objekt.rotationY)
+                                .rotate(xVector, modelRotatingX + objekt.rotationX)
+                                .scale(
+                                    objekt.size + scalingObject,
+                                    objekt.size + scalingObject,
+                                    objekt.size + scalingObject
+                                )
                         )
-                    }
-                    instances[index].transform.mul(
-                        Matrix4().rotate(quat)
-                            .rotate(upVector, worldRotation + worldRotationTmp)
-                            .translate(translatingVector)
-                            .rotate(upVector, modelRotatingY+objekt.rotationY)
-                            .rotate(xVector, modelRotatingX+objekt.rotationX)
-                    )
-                    var showingTransformInfo = false
-                    when(editMode){
-                        EditMode.move -> {
-                            if(modelMoving != null){
-                                makeTextForObject(instances[index]){ pos, rot ->
-                                    "X: ${pos.x.roundToInt()}, Y: ${pos.y.roundToInt()}"
+                        var showingTransformInfo = false
+                        when (editMode) {
+                            EditMode.move -> {
+                                if (modelMoving != null) {
+                                    makeTextForObject(instances[index]) { pos, rot ->
+                                        "X: ${pos.x.roundToInt()}, Y: ${pos.y.roundToInt()}"
+                                    }
+                                    showingTransformInfo = true
                                 }
-                                showingTransformInfo = true
                             }
-                        }
-                        EditMode.rotate -> {
-                            if(modelRotatingX != 0f){
-                                makeTextForObject(instances[index]){ pos, rot ->
-                                    "X: ${rot.y.roundToInt()}"
-                                }
-                                showingTransformInfo = true
-                            } else if(modelRotatingY != 0f){
-                                makeTextForObject(instances[index]){ pos, rot ->
-                                    "Y: ${rot.x.roundToInt()}"
-                                }
-                                showingTransformInfo = true
-                            }
-                        }
-                        else -> {}
-                    }
-                    if(!showingTransformInfo){
-                        showObjectsName(index)
-                    }
-                }
-            } catch (e: java.lang.IndexOutOfBoundsException){
 
+                            EditMode.move_vertical -> {
+                                if (modelMoving != null) {
+                                    makeTextForObject(instances[index]) { pos, rot ->
+                                        "Z: ${pos.z.roundToInt()}"
+                                    }
+                                    showingTransformInfo = true
+                                }
+                            }
+
+                            EditMode.rotate -> {
+                                if (modelRotatingX != 0f) {
+                                    makeTextForObject(instances[index]) { pos, rot ->
+                                        "X: ${rot.y.roundToInt()}"
+                                    }
+                                    showingTransformInfo = true
+                                } else if (modelRotatingY != 0f) {
+                                    makeTextForObject(instances[index]) { pos, rot ->
+                                        "Y: ${rot.x.roundToInt()}"
+                                    }
+                                    showingTransformInfo = true
+                                }
+                            }
+
+                            EditMode.scale -> {
+                                if (scalingObject != 0f) {
+                                    makeTextForObject(instances[index]) { pos, rot ->
+                                        usingKotlinStringFormat(
+                                            (objekt.size + scalingObject).toDouble(),
+                                            2
+                                        )
+                                    }
+                                    showingTransformInfo = true
+                                }
+                            }
+
+                            else -> {}
+                        }
+                        if (!showingTransformInfo) {
+                            showObjectsName(index)
+                        }
+                    }
+                } catch (e: java.lang.IndexOutOfBoundsException) {
+
+                }
             }
         }
 
@@ -240,25 +318,50 @@ class MyGdxGame (
         }
     }
 
+    fun usingKotlinStringFormat(input: Double, scale: Int) = "%.${scale}f".format(input)
+
     private fun showObjectsName(index: Int) {
         makeTextForObject(instances[index]) { pos, rot ->
             objects[index].name
         }
     }
 
+    fun projectObject(model: ModelInstance): MyPoint{
+        var worldPosition: Vector3 = Vector3()
+        model.transform.getTranslation(worldPosition)
+        cam!!.project(worldPosition).let{
+            return MyPoint(it.x, it.y)
+        }
+    }
+
     fun makeTextForObject(model: ModelInstance, toText: (Vector3, Vector3) -> String){
+        val screenPosition = projectObject(model)
+
         var worldPosition: Vector3 = Vector3()
         var worldRotation: Quaternion = Quaternion()
         model.transform.getTranslation(worldPosition)
         model.transform.getRotation(worldRotation)
         val rotationInAngles = Vector3(worldRotation.yaw, worldRotation.roll, worldRotation.pitch)
-        val screenPosition: Vector3 = cam!!.project(worldPosition)
-        textXY = MyPoint(screenPosition.x, screenPosition.y)
+        textXY = screenPosition
         fontCache!!.setText(toText(worldPosition, rotationInAngles), screenPosition.x, screenPosition.y, 0f, Align.center, false);
-
-
-
         //this.text = toText(worldPosition)
+    }
+
+    fun getObjectsWithLimitedDistance(objekt: Objekt): Vector3{
+        var dist = distance3D(cam!!.position, Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
+        //var dist = distance(cam!!.position.x, cam!!.position.z, objekt.diffX, objekt.diffZ)
+        val degree = atan2(objekt.diffX, objekt.diffZ)
+        //val degreeY = atan2(objekt.diffY, sqrt(objekt.x * objekt.x + objekt.z * objekt.z))
+        val phi = acos(objekt.diffY / dist)
+        if(dist > 50f) dist = 50f
+
+        println(degree)
+
+        val x = (dist) * sin(degree)
+        val y = (dist) * cos(phi)
+        val z = (dist) * cos(degree)
+
+        return Vector3(x, y, z)
     }
 
     fun getObjectsXZAfterRot(objekt: Objekt): MyPoint{
@@ -293,6 +396,7 @@ class MyGdxGame (
             worldRotationTmp = -(Gdx.input.x - startTouch.x) / 10f
         } else if(draggingVertical){
             worldUpDownTmp = -(Gdx.input.y - startTouch.y) / 10f
+            camHeightChange(camera.y - worldUpDown - worldUpDownTmp)
         }
     }
 
@@ -308,6 +412,28 @@ class MyGdxGame (
             modelRotatingY = (Gdx.input.x - startTouch.x)
         } else if(draggingVertical){
             modelRotatingX = (Gdx.input.y - startTouch.y)
+        }
+    }
+
+    fun scaleObject(){
+        if(!dragging){
+            dragTresholdOnAxisCheck()
+        }
+        if(draggingHorizontal) {
+            scalingObject = (Gdx.input.x - startTouch.x)/100
+        } else if(draggingVertical){
+            scalingObject = -(Gdx.input.y - startTouch.y)/100
+        }
+        if(objects[selectedObject].size+scalingObject < 0) scalingObject = -objects[selectedObject].size
+    }
+
+    fun moveObjectVertical(){
+        if(!dragging){
+            dragTresholdOnAxisCheck()
+            return
+        }
+        if(draggingVertical) {
+            modelMovingVertical = -(Gdx.input.y - startTouch.y) / 10f
         }
     }
 
@@ -327,6 +453,9 @@ class MyGdxGame (
     fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
         return sqrt((y2 - y1) * (y2 - y1) + (x2 - x1) * (x2 - x1))
     }
+    fun distance3D(pos1: Vector3, pos2: Vector3): Float {
+        return sqrt((pos2.x - pos1.x) * (pos2.x - pos1.x) + (pos2.y - pos1.y) * (pos2.y - pos1.y) + (pos2.z - pos1.z) * (pos2.z - pos1.z))
+    }
 
     fun onTouch(){
         if(!isUserTouching){
@@ -338,6 +467,10 @@ class MyGdxGame (
                 moveObjectAround()
             } else if(editMode == EditMode.rotate){
                 rotateObject()
+            } else if(editMode == EditMode.scale){
+                scaleObject()
+            } else if(editMode == EditMode.move_vertical){
+                moveObjectVertical()
             }
         } else {
             panAround()
@@ -372,15 +505,29 @@ class MyGdxGame (
                 objects[selectedObject].diffX = myPoint.x
                 objects[selectedObject].diffZ = myPoint.y
                 objects[selectedObject].changed = true
+                onChange(true)
                 modelMoving = null
             } else if(modelRotatingY != 0f){
                 objects[selectedObject].rotationY += modelRotatingY
                 objects[selectedObject].changed = true
+                onChange(true)
                 modelRotatingY = 0f
             } else if(modelRotatingX != 0f){
                 objects[selectedObject].rotationX += modelRotatingX
                 objects[selectedObject].changed = true
+                onChange(true)
                 modelRotatingX = 0f
+            } else if(scalingObject != 0f){
+                objects[selectedObject].size = objects[selectedObject].size+scalingObject
+                objects[selectedObject].changed = true
+                onChange(true)
+                scalingObject = 0f
+            } else if(modelMovingVertical != 0f){
+                objects[selectedObject].diffY += modelMovingVertical
+                objects[selectedObject].changed = true
+                modelMovingVertical = 0f
+                onChange(true)
+                modelMoving = null
             }
         }
         dragging = false

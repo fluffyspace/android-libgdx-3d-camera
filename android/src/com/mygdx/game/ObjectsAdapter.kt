@@ -12,6 +12,7 @@ class ObjectsAdapter(var dataSet: MutableList<Objekt>, var listener: ObjectClick
 
     interface ObjectClickListener {
         fun onClickOnObject(objekt: Objekt)
+        fun onLongClickOnObject(objekt: Objekt)
     }
 
     /**
@@ -50,6 +51,10 @@ class ObjectsAdapter(var dataSet: MutableList<Objekt>, var listener: ObjectClick
         viewHolder.objectCoordinates.text = "${dataSet[position].x}, ${dataSet[position].y}, ${dataSet[position].z}"
         viewHolder.itemView.setOnClickListener {
             listener.onClickOnObject(dataSet[position])
+        }
+        viewHolder.itemView.setOnLongClickListener {
+            listener.onLongClickOnObject(dataSet[position])
+            return@setOnLongClickListener true
         }
     }
 

@@ -14,13 +14,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.graphics.alpha
-import androidx.core.graphics.blue
-import androidx.core.graphics.green
-import androidx.core.graphics.red
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.rxjava3.RxDataStore
-import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.room.Room
@@ -37,10 +32,9 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
-import java.util.Arrays
 
 class MainActivity : AppCompatActivity(), CoordinateAddListener,
-    AddNewObjectDialog.AddNewObjectDialogListener, ObjectsAdapter.ObjectClickListener {
+    AddOrEditObjectDialog.AddOrEditObjectDialogListener, ObjectsAdapter.ObjectClickListener {
     lateinit var binding: ActivityMainBinding
     var fusedLocationClient: FusedLocationProviderClient? = null
     var dataStore: RxDataStore<Preferences>? = null
@@ -99,7 +93,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         camera = Objekt(0, 0f, 0f, 0f)
         updateEditTexts()
         binding.addObject.setOnClickListener {
-            val addNewObjectDialog = AddNewObjectDialog()
+            val addNewObjectDialog = AddOrEditObjectDialog(null)
             addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
         }
 
@@ -107,17 +101,6 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
             applicationContext,
             AppDatabase::class.java, "database-name"
         ).build()
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            val objektDao = db.objektDao()
-            objects = objektDao.getAll().toMutableList()
-            withContext(Dispatchers.Main){
-                objectsAdapter = ObjectsAdapter(objects, this@MainActivity)
-                binding.recyclerView.adapter = objectsAdapter
-                binding.recyclerView.layoutManager = LinearLayoutManager(this@MainActivity)
-                checkObjectsCount()
-            }
-        }
 
         // Get text passed to app for adding new objects
         val intent = intent
@@ -132,6 +115,24 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                     Log.d("Expanded", "run: $expandedURL1")
                 }.start()
                 AddCoordinateFragment(this).show(supportFragmentManager, "GAME_DIALOG")
+            }
+        }
+    }
+
+    fun getObjectsFromDatabase(){
+        lifecycleScope.launch(Dispatchers.IO) {
+            val objektDao = db.objektDao()
+            objects = objektDao.getAll().toMutableList()
+            withContext(Dispatchers.Main){
+                if(objectsAdapter == null) {
+                    objectsAdapter = ObjectsAdapter(objects, this@MainActivity)
+                    binding.recyclerView.adapter = objectsAdapter
+                    binding.recyclerView.layoutManager = LinearLayoutManager(this@MainActivity)
+                } else {
+                    objectsAdapter!!.dataSet = objects
+                    objectsAdapter!!.notifyDataSetChanged()
+                }
+                checkObjectsCount()
             }
         }
     }
@@ -252,6 +253,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
 
     override fun onResume() {
         super.onResume()
+        getObjectsFromDatabase()
     }
 
     override fun onPause() {
@@ -316,7 +318,43 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         }
     }
 
+    override fun onClickEditObject(
+        objekt: Objekt,
+        coordinates: String,
+        name: String,
+        color: String
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            textToObject(coordinates)?.apply {
+                this.name = name
+                if(color != "") {
+                    try {
+                        this.color = Color.parseColor(color)
+                    }catch(e: NumberFormatException){
+
+                    }
+                }
+                this.id = objekt.id
+            }?.let { objekt ->
+                Log.d("ingo", "edited objekt")
+                db.objektDao().update(objekt)
+                val adapterItemIndex = objects.indexOfFirst { it.id == objekt.id }
+                objects[adapterItemIndex] = objekt
+                withContext(Dispatchers.Main){
+                    objectsAdapter?.dataSet?.size?.let {size ->
+                        objectsAdapter?.notifyItemChanged(adapterItemIndex)
+                    }
+                }
+            }
+        }
+    }
+
     override fun onClickOnObject(objekt: Objekt) {
+        val addNewObjectDialog = AddOrEditObjectDialog(objekt)
+        addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
+    }
+
+    override fun onLongClickOnObject(objekt: Objekt) {
         lifecycleScope.launch(Dispatchers.IO) {
             db.objektDao().delete(objekt)
             withContext(Dispatchers.Main){

@@ -186,7 +186,7 @@ public class AndroidApplicationOverrided extends AppCompatActivity implements An
             frameLayout.addView(graphics.getView());
 
             fieldOfViewLayout = getLayoutInflater().inflate(R.layout.field_of_view_layout, null);
-            fieldOfViewLayout.setLayoutParams(new FrameLayout.LayoutParams( ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM ));
+            fieldOfViewLayout.setLayoutParams(new FrameLayout.LayoutParams( ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM ));
             fieldOfViewLayout.setId(R.id.seekbar);
             frameLayout.addView(fieldOfViewLayout);
 
