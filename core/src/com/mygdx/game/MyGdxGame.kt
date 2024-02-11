@@ -2,6 +2,7 @@ package com.mygdx.game
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.PerspectiveCamera
@@ -73,9 +74,8 @@ class MyGdxGame (
     val upVector = Vector3(0f, 1f, 0f)
     val xVector = Vector3(1f, 0f, 0f)
     var font: BitmapFont? = null
-    var textXY: MyPoint? = null
     var text: String? = null
-    var fontCache: BitmapFontCache? = null
+    var fontCaches: MutableList<BitmapFontCache?> = mutableListOf()
     var noRender: Boolean = false
     var noDistance: Boolean = false
 
@@ -105,7 +105,6 @@ class MyGdxGame (
         rotationMatrix = Matrix4()
 
         font = BitmapFont(Gdx.files.internal("arial_normal.fnt"), false)
-        fontCache = BitmapFontCache(font, false)
 
         // Constructs a new OrthographicCamera, using the given viewport width and height
         // Height is multiplied by aspect ratio.
@@ -138,21 +137,21 @@ class MyGdxGame (
         for(objekt in objects){
             objekt.diffX = (camera.x - objekt.x) * scalar
             objekt.diffZ = (camera.y - objekt.y) * scalar
-            objekt.diffY = (camera.z - objekt.z) * scalar
+            objekt.diffY = (camera.z - objekt.z)
             println("Dobio sam $objekt i ")
             toggleEditMode(false)
             instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
+            fontCaches.add(BitmapFontCache(font, false))
         }
         camHeightChange(camera.y)
     }
 
     fun objectsUpdated(){
         selectedObject = -1
-        textXY = null
         for((index, objekt) in objects.withIndex()){
             objekt.diffX = (camera.x - objekt.x) * scalar
             objekt.diffZ = (camera.y - objekt.y) * scalar
-            objekt.diffY = (camera.z - objekt.z) * scalar
+            objekt.diffY = (camera.z - objekt.z)
             println("Dobio sam $objekt i ")
             toggleEditMode(false)
             //instances[index].add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
@@ -182,8 +181,13 @@ class MyGdxGame (
         Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
         quat = Quaternion(-quat.z, quat.y, quat.x, quat.w)
 
-
         for((index, objekt) in objects.withIndex()){
+            /*
+            TODO: after making objects static and move only camera, you can uncomment this.
+            if (!isVisible(cam!!, index)) {
+                if(fontCaches[index] != null) fontCaches[index] = null
+                continue
+            }*/
             if(noDistance) {
                 instances[index].transform.set(Matrix4())
                 val myPoint = getObjectsWithLimitedDistance(objekt)
@@ -204,6 +208,9 @@ class MyGdxGame (
                             objekt.size
                         )
                 )
+                makeTextForObject(index){ pos, rot ->
+                    objekt.name + "\n" + "%.2f".format(distance3D(cam!!.position, pos)) + " m"
+                }
             } else {
                 try {
                     instances[index].transform.set(Matrix4())
@@ -220,6 +227,9 @@ class MyGdxGame (
                                 .rotate(xVector, objekt.rotationX)
                                 .scale(objekt.size, objekt.size, objekt.size)
                         )
+                        makeTextForObject(index){ pos, rot ->
+                            objekt.name + "\n" + "%.2f".format(distance3D(cam!!.position, pos)) + " m"
+                        }
                     } else {
                         lateinit var translatingVector: Vector3
                         if (modelMoving != null) {
@@ -252,7 +262,7 @@ class MyGdxGame (
                         when (editMode) {
                             EditMode.move -> {
                                 if (modelMoving != null) {
-                                    makeTextForObject(instances[index]) { pos, rot ->
+                                    makeTextForObject(index) { pos, rot ->
                                         "X: ${pos.x.roundToInt()}, Y: ${pos.y.roundToInt()}"
                                     }
                                     showingTransformInfo = true
@@ -261,7 +271,7 @@ class MyGdxGame (
 
                             EditMode.move_vertical -> {
                                 if (modelMoving != null) {
-                                    makeTextForObject(instances[index]) { pos, rot ->
+                                    makeTextForObject(index) { pos, rot ->
                                         "Z: ${pos.z.roundToInt()}"
                                     }
                                     showingTransformInfo = true
@@ -270,12 +280,12 @@ class MyGdxGame (
 
                             EditMode.rotate -> {
                                 if (modelRotatingX != 0f) {
-                                    makeTextForObject(instances[index]) { pos, rot ->
+                                    makeTextForObject(index) { pos, rot ->
                                         "X: ${rot.y.roundToInt()}"
                                     }
                                     showingTransformInfo = true
                                 } else if (modelRotatingY != 0f) {
-                                    makeTextForObject(instances[index]) { pos, rot ->
+                                    makeTextForObject(index) { pos, rot ->
                                         "Y: ${rot.x.roundToInt()}"
                                     }
                                     showingTransformInfo = true
@@ -284,7 +294,7 @@ class MyGdxGame (
 
                             EditMode.scale -> {
                                 if (scalingObject != 0f) {
-                                    makeTextForObject(instances[index]) { pos, rot ->
+                                    makeTextForObject(index) { pos, rot ->
                                         usingKotlinStringFormat(
                                             (objekt.size + scalingObject).toDouble(),
                                             2
@@ -311,17 +321,27 @@ class MyGdxGame (
             modelBatch!!.render(instance, environment)
         }
         modelBatch!!.end()
-        textXY?.let{
-            batch!!.begin()
-            fontCache!!.draw(batch)
-            batch!!.end()
+
+        batch!!.begin()
+        fontCaches.forEachIndexed {index, fontCache ->
+            if (isVisible(cam!!, index)) {
+                fontCache?.draw(batch)
+            }
         }
+        batch!!.end()
     }
+
+    fun isVisible(cam: Camera, index: Int): Boolean {
+        val pos = Vector3()
+        instances[index].transform.getTranslation(pos)
+        return cam.frustum.sphereInFrustum(pos, objects[index].size)
+    }
+
 
     fun usingKotlinStringFormat(input: Double, scale: Int) = "%.${scale}f".format(input)
 
     private fun showObjectsName(index: Int) {
-        makeTextForObject(instances[index]) { pos, rot ->
+        makeTextForObject(index) { pos, rot ->
             objects[index].name
         }
     }
@@ -334,7 +354,8 @@ class MyGdxGame (
         }
     }
 
-    fun makeTextForObject(model: ModelInstance, toText: (Vector3, Vector3) -> String){
+    fun makeTextForObject(index: Int, toText: (Vector3, Vector3) -> String){
+        val model = instances[index]
         val screenPosition = projectObject(model)
 
         var worldPosition: Vector3 = Vector3()
@@ -342,8 +363,7 @@ class MyGdxGame (
         model.transform.getTranslation(worldPosition)
         model.transform.getRotation(worldRotation)
         val rotationInAngles = Vector3(worldRotation.yaw, worldRotation.roll, worldRotation.pitch)
-        textXY = screenPosition
-        fontCache!!.setText(toText(worldPosition, rotationInAngles), screenPosition.x, screenPosition.y, 0f, Align.center, false);
+        fontCaches[index]!!.setText(toText(worldPosition, rotationInAngles), screenPosition.x, screenPosition.y, 0f, Align.center, false);
         //this.text = toText(worldPosition)
     }
 
@@ -533,7 +553,6 @@ class MyGdxGame (
         dragging = false
         draggingHorizontal = false
         draggingVertical = false
-        textXY = null
     }
 
     fun touchHandler(){
