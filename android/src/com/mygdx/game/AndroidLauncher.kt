@@ -147,6 +147,7 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         travelExplore = this.fieldOfViewLayout.findViewById(R.id.no_distance)
         travelExplore.setOnClickListener {
             game.noDistance = !game.noDistance
+            game.noDistanceChanged()
             it.setBackgroundColor(if(game.noDistance) Color.YELLOW else Color.WHITE)
         }
         this.fieldOfViewLayout.findViewById<TextView>(R.id.fovUp).setOnClickListener {

@@ -18,5 +18,6 @@ data class Objekt(
     var diffY: Float = 0f,
     var diffZ: Float = 0f,
     var changed: Boolean = false,
+    var visible: Boolean = false,
 )
 
