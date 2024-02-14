@@ -140,7 +140,8 @@ class MyGdxGame (
             objekt.diffY = (camera.z - objekt.z)
             println("Dobio sam $objekt i ")
             toggleEditMode(false)
-            instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
+            instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
+            updateModel(instances.lastIndex)
             fontCaches.add(BitmapFontCache(font, false))
         }
         camHeightChange(camera.y)
@@ -166,6 +167,66 @@ class MyGdxGame (
                     VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong()
         )
     }
+    val cameraTmp = Vector3()
+    var quat = Quaternion()
+    var translatingVector = Vector3()
+    fun updateCamera(){
+        cam!!.apply {
+            val aspect: Float = viewportWidth / viewportHeight
+            projection.setToProjection(abs(near), abs(far), fieldOfView, aspect)
+
+            Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
+            translatingVector = Vector3(
+                0f,
+                worldUpDown + worldUpDownTmp,
+                0f
+            )
+
+            //view.setToLookAt(position, cameraTmp.set(position).add(direction), up)
+            view.set(
+                Matrix4()
+                    .rotate(quat)
+                    .rotate(upVector, worldRotation + worldRotationTmp)
+                    .translate(translatingVector)
+            )
+            combined.set(projection)
+            Matrix4.mul(combined.`val`, view.`val`)
+
+            invProjectionView.set(combined)
+            Matrix4.inv(invProjectionView.`val`)
+            frustum.update(invProjectionView)
+        }
+    }
+
+    fun updateModel(index: Int){
+        val objekt = objects[index]
+        lateinit var translatingVector: Vector3
+        if (modelMoving != null) {
+            val myPoint = getObjectsXZAfterRot(objekt)
+            translatingVector = Vector3(
+                myPoint.x,
+                objekt.diffY,
+                myPoint.y
+            )
+        } else {
+            translatingVector = Vector3(
+                objekt.diffX,
+                objekt.diffY + modelMovingVertical,
+                objekt.diffZ
+            )
+        }
+        //instances[index].transform.set(Matrix4())
+        instances[index].transform.set(
+            Matrix4().translate(translatingVector)
+                .rotate(upVector, modelRotatingY + objekt.rotationY)
+                .rotate(xVector, modelRotatingX + objekt.rotationX)
+                .scale(
+                    objekt.size + scalingObject,
+                    objekt.size + scalingObject,
+                    objekt.size + scalingObject
+                )
+        )
+    }
 
     override fun render() {
         if(noRender) return
@@ -173,13 +234,13 @@ class MyGdxGame (
 
         cam!!.fieldOfView = fov.toFloat()
 
-        cam!!.update()
+        updateCamera()
+
+
         Gdx.gl.glViewport(0, 0, Gdx.graphics.width, Gdx.graphics.height)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT or GL20.GL_DEPTH_BUFFER_BIT)
 
-        var quat = Quaternion()
-        Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
-        quat = Quaternion(-quat.z, quat.y, quat.x, quat.w)
+
 
         for((index, objekt) in objects.withIndex()){
             /*
@@ -188,7 +249,7 @@ class MyGdxGame (
                 if(fontCaches[index] != null) fontCaches[index] = null
                 continue
             }*/
-            if(noDistance) {
+            /*if(noDistance) {
                 instances[index].transform.set(Matrix4())
                 val myPoint = getObjectsWithLimitedDistance(objekt)
                 val translatingVector = Vector3(
@@ -313,7 +374,7 @@ class MyGdxGame (
                 } catch (e: java.lang.IndexOutOfBoundsException) {
 
                 }
-            }
+            }*/
         }
 
         modelBatch!!.begin(cam)
@@ -492,6 +553,7 @@ class MyGdxGame (
             } else if(editMode == EditMode.move_vertical){
                 moveObjectVertical()
             }
+            updateModel(selectedObject)
         } else {
             panAround()
         }
@@ -502,13 +564,20 @@ class MyGdxGame (
         if(!dragging){ // a click
             System.out.println("Pokušavam uzeti objekt")
             if(selectedObject != -1){
-                instances[selectedObject] = ModelInstance(generateModelForObject(objects[selectedObject].libgdxcolor))
+                objects[selectedObject].let { objekt ->
+                    instances[selectedObject] =
+                        ModelInstance(generateModelForObject(objekt.libgdxcolor))
+                        updateModel(selectedObject)
+                }
             }
             val newObject = getObject(Gdx.input.x, Gdx.input.y)
             selectedObject = if(newObject != selectedObject) newObject else -1
             System.out.println("Objekt je $selectedObject");
             if(selectedObject != -1) {
-                instances[selectedObject] = ModelInstance(selectedModel)
+                objects[selectedObject].let{ objekt ->
+                    instances[selectedObject] = ModelInstance(selectedModel)
+                    updateModel(selectedObject)
+                }
                 toggleEditMode(true)
             } else {
                 toggleEditMode(false)
