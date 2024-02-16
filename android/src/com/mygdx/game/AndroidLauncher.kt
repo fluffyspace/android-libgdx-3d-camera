@@ -26,6 +26,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.googlecardboard.HeadTracker
+import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -26,6 +26,7 @@ import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ExtendViewport
+import com.mygdx.game.notbaza.Objekt
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.atan2
@@ -134,16 +135,19 @@ class MyGdxGame (
     fun createInstances(){
         selectedObject = -1
         instances = mutableListOf()
+
+        val cameraCartesian = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
+        lateinit var objectCartesian: Vector3
         for(objekt in objects){
-            objekt.diffX = (camera.x - objekt.x) * scalar
-            objekt.diffZ = (camera.y - objekt.y) * scalar
-            objekt.diffY = (camera.z - objekt.z)
+            objectCartesian = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
+            objekt.diffX = (cameraCartesian.x - objectCartesian.x)
+            objekt.diffZ = (cameraCartesian.y - objectCartesian.y)
+            objekt.diffY = (cameraCartesian.z - objectCartesian.z)
             println("Dobio sam $objekt i ")
             toggleEditMode(false)
             fontCaches.add(BitmapFontCache(font, false))
             instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
             updateModel(instances.lastIndex)
-
         }
         camHeightChange(camera.y)
     }
@@ -227,6 +231,25 @@ class MyGdxGame (
                     objekt.size + scalingObject
                 )
         )
+    }
+
+    // Earth radius in meters
+    private val EARTH_RADIUS = 6371000.0
+
+    // Convert latitude, longitude, and altitude to Cartesian coordinates
+    fun geoToCartesian(latitude: Double, longitude: Double, altitude: Double): Vector3 {
+        // Convert latitude and longitude to radians
+        val latRad = Math.toRadians(latitude)
+        val lonRad = Math.toRadians(longitude)
+
+        // Calculate Earth's radius at given latitude
+        val radius = EARTH_RADIUS + altitude
+
+        // Convert to Cartesian coordinates
+        val x = radius * cos(latRad) * cos(lonRad)
+        val y = radius * cos(latRad) * sin(lonRad)
+        val z = radius * sin(latRad)
+        return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
     }
 
     fun noDistanceChanged(){
@@ -315,7 +338,7 @@ class MyGdxGame (
                         if (scalingObject != 0f) {
                             makeTextForObject(index) { pos, rot ->
                                 usingKotlinStringFormat(
-                                    (objekt.size + scalingObject).toDouble(),
+                                    (objekt.size + scalingObject),
                                     2
                                 )
                             }
@@ -355,11 +378,11 @@ class MyGdxGame (
     }
 
 
-    fun usingKotlinStringFormat(input: Double, scale: Int) = "%.${scale}f".format(input)
+    fun usingKotlinStringFormat(input: Float, scale: Int) = "%.${scale}f".format(input)
 
     private fun showObjectsName(index: Int) {
         makeTextForObject(index) { pos, rot ->
-            objects[index].name
+            objects[index].name + "\n" + usingKotlinStringFormat(distance3D(Vector3(0f,0f,0f), Vector3(objects[index].diffX, objects[index].diffY, objects[index].diffZ)), 2)
         }
     }
 
