@@ -80,6 +80,13 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         binding.openViewer.setOnClickListener {
             Log.d("ingo", "open viewer")
+
+            val success = setFromET()
+            if(!success){
+                Toast.makeText(this, "Invalid coordinates.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             val intent = Intent(this@MainActivity, AndroidLauncher::class.java)
             intent.putExtra("camera", Gson().toJson(camera))
             intent.putExtra("objects", Gson().toJson(objects))
@@ -94,14 +101,6 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                     Gson().toJson(objekt)
                 )
             }
-        }
-        binding.cameraSetCoordinatesFromEt.setOnClickListener {
-            camera = textToObject(binding.cameraCoordinatesEt.text.toString())
-            updateEditTexts()
-            updateDataStore(
-                cameraDataStoreKey,
-                Gson().toJson(camera)
-            )
         }
         camera = Objekt(0, 0f, 0f, 0f)
         updateEditTexts()
@@ -132,6 +131,17 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         }
         readFromDataStore()
         hasLocationPermission()
+    }
+
+    fun setFromET(): Boolean{
+        val tmp = textToObject(binding.cameraCoordinatesEt.text.toString()) ?: return false
+        camera = tmp
+        updateEditTexts()
+        updateDataStore(
+            cameraDataStoreKey,
+            Gson().toJson(camera)
+        )
+        return true
     }
 
     fun getObjectsFromDatabase(){
@@ -313,8 +323,6 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
             return s3
         }
     }
-
-
 
     override fun onClickAddObject(coordinates: String, name: String, color: String) {
         lifecycleScope.launch(Dispatchers.IO) {

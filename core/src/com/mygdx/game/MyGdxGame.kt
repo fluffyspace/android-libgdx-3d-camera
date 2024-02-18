@@ -2,6 +2,7 @@ package com.mygdx.game
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.Input.Keys.R
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
@@ -44,12 +45,11 @@ class MyGdxGame (
     var fov: Int,
     var toggleEditMode: (Boolean) -> Unit,
     var onChange: (Boolean) -> Unit,
-    var camHeightChange: (Float) -> Unit,
+    var camHeightChange: (Vector3) -> Unit,
 ) : ApplicationAdapter() {
     private var cam: PerspectiveCamera? = null
     private var batch: SpriteBatch? = null
     private var mapSprite: Sprite? = null
-    private var rotationMatrix: Matrix4? = null
     var selectedModel: Model? = null
     var modelBatch: ModelBatch? = null
     var environment: Environment? = null
@@ -96,6 +96,7 @@ class MyGdxGame (
     }
 
     var editMode: EditMode? = null
+    var cameraCartesian: Vector3 = Vector3()
 
     override fun create() {
         mapSprite = Sprite(Texture(Gdx.files.internal("badlogic.jpg")))
@@ -103,14 +104,15 @@ class MyGdxGame (
         mapSprite!!.setSize(WORLD_WIDTH.toFloat(), WORLD_HEIGHT.toFloat())
         val w = Gdx.graphics.width.toFloat()
         val h = Gdx.graphics.height.toFloat()
-        rotationMatrix = Matrix4()
 
         font = BitmapFont(Gdx.files.internal("arial_normal.fnt"), false)
 
         // Constructs a new OrthographicCamera, using the given viewport width and height
         // Height is multiplied by aspect ratio.
+        println("aba ${camera.x} ${camera.x.toDouble()} ${camera.y} ${camera.y.toDouble()} ${camera.z} ${camera.z.toDouble()} ")
+        cameraCartesian = toca(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
         cam = PerspectiveCamera(81f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
-        cam!!.position[0f, 0f] = 0f
+        cam!!.position.set(Vector3(0f, 0f, 0f))
         cam!!.lookAt(1f, 0f, 0f)
         cam!!.near = 1f
         cam!!.far = 300f
@@ -120,68 +122,64 @@ class MyGdxGame (
         environment!!.add(DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f))
         val modelBuilder = ModelBuilder()
         selectedModel = modelBuilder.createBox(
-            5f, 5f, 5f,
+            1f, 1f, 1f,
             Material(ColorAttribute.createDiffuse(Color.RED)),
             (
                     VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong()
         )
         modelBatch = ModelBatch()
         batch = SpriteBatch()
+        updateCamera()
         createInstances()
     }
 
     val scalar = 10000f
 
     fun createInstances(){
-        selectedObject = -1
         instances = mutableListOf()
-
-        val cameraCartesian = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
-        lateinit var objectCartesian: Vector3
-        for(objekt in objects){
-            objectCartesian = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
-            objekt.diffX = (cameraCartesian.x - objectCartesian.x)
-            objekt.diffZ = (cameraCartesian.y - objectCartesian.y)
-            objekt.diffY = (cameraCartesian.z - objectCartesian.z)
-            println("Dobio sam $objekt i ")
-            toggleEditMode(false)
+        updateObjectsCoordinates()
+        for((index, objekt) in objects.withIndex()){
+            println("ingo Dobio sam $objekt i ")
             fontCaches.add(BitmapFontCache(font, false))
             instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
             updateModel(instances.lastIndex)
         }
-        camHeightChange(camera.y)
     }
 
-    fun objectsUpdated(){
+    fun updateObjectsCoordinates(){
         selectedObject = -1
+        lateinit var objectCartesian: Vector3
+        println("ingo camera $cameraCartesian")
         for((index, objekt) in objects.withIndex()){
-            objekt.diffX = (camera.x - objekt.x) * scalar
-            objekt.diffZ = (camera.y - objekt.y) * scalar
-            objekt.diffY = (camera.z - objekt.z)
+                objectCartesian = toca(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
+            // i'm replacing y and z because y is vertical axis and z is in real world coordinates.
+            objekt.x = (objectCartesian.x - cameraCartesian.x)
+            objekt.z = (objectCartesian.y - cameraCartesian.y)
+            objekt.y = (objectCartesian.z - cameraCartesian.z)
             println("Dobio sam $objekt i ")
-            toggleEditMode(false)
             //instances[index].add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
         }
+        toggleEditMode(false)
     }
 
     fun generateModelForObject(color: Color): Model{
         return ModelBuilder().createBox(
-            5f, 5f, 5f,
+            1f, 1f, 1f,
             Material(ColorAttribute.createDiffuse(color)),
             (
                     VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong()
         )
     }
-    val cameraTmp = Vector3()
+
     var quat = Quaternion()
-    var translatingVector = Vector3()
+    var camTranslatingVector = Vector3()
     fun updateCamera(){
         cam!!.apply {
             val aspect: Float = viewportWidth / viewportHeight
             projection.setToProjection(abs(near), abs(far), fieldOfView, aspect)
 
             Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
-            translatingVector = Vector3(
+            camTranslatingVector = Vector3(
                 0f,
                 worldUpDown + worldUpDownTmp,
                 0f
@@ -192,7 +190,8 @@ class MyGdxGame (
                 Matrix4()
                     .rotate(quat)
                     .rotate(upVector, worldRotation + worldRotationTmp)
-                    .translate(translatingVector)
+                    //.rotate(xVector, 180f)
+                    .translate(Vector3(camTranslatingVector.x, -camTranslatingVector.y, camTranslatingVector.z))
             )
             combined.set(projection)
             Matrix4.mul(combined.`val`, view.`val`)
@@ -201,6 +200,7 @@ class MyGdxGame (
             Matrix4.inv(invProjectionView.`val`)
             frustum.update(invProjectionView)
         }
+        camHeightChange(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
     }
 
     fun updateModel(index: Int){
@@ -210,14 +210,14 @@ class MyGdxGame (
             val myPoint = getObjectsXZAfterRot(objekt)
             translatingVector = Vector3(
                 myPoint.x,
-                objekt.diffY,
+                objekt.y,
                 myPoint.y
             )
         } else {
             translatingVector = Vector3(
-                objekt.diffX,
-                objekt.diffY + modelMovingVertical,
-                objekt.diffZ
+                objekt.x,
+                objekt.y + modelMovingVertical,
+                objekt.z
             )
         }
         //instances[index].transform.set(Matrix4())
@@ -236,8 +236,50 @@ class MyGdxGame (
     // Earth radius in meters
     private val EARTH_RADIUS = 6371000.0
 
+    fun toca(latitude: Double, longitude: Double, height: Double): Vector3{
+
+
+        return geoToCartesian(latitude, longitude, height)
+        // Define the major and minor radius of the earth in meters
+        // Define the major and minor radius of the earth in meters
+        val RADIUS_MAJOR = 6378137.0
+        val RADIUS_MINOR = 6356752.3142
+
+// Calculate the eccentricity of the ellipsoid
+
+// Calculate the eccentricity of the ellipsoid
+        val e = Math.sqrt(1 - RADIUS_MINOR * RADIUS_MINOR / (RADIUS_MAJOR * RADIUS_MAJOR))
+
+// Convert longitude to x value in meters
+
+// Convert longitude to x value in meters
+        val x = Math.toRadians(longitude) * RADIUS_MAJOR
+
+// Convert latitude to y value in meters
+
+// Convert latitude to y value in meters
+        val y = RADIUS_MAJOR * Math.log(
+            Math.tan(Math.PI / 4 + Math.toRadians(latitude) / 2) * Math.pow(
+                (1 - e * Math.sin(
+                    Math.toRadians(latitude)
+                )) / (1 + e * Math.sin(Math.toRadians(latitude))), e / 2
+            )
+        )
+
+// Calculate the z value in meters using the height above the ellipsoid
+
+// Calculate the z value in meters using the height above the ellipsoid
+        val z: Double = height - RADIUS_MINOR + e * e * RADIUS_MINOR * Math.pow(
+            Math.sin(Math.toRadians(latitude)),
+            2.0
+        )
+        println("$x $y $z")
+        return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
+    }
+
     // Convert latitude, longitude, and altitude to Cartesian coordinates
     fun geoToCartesian(latitude: Double, longitude: Double, altitude: Double): Vector3 {
+        //return Vector3(latitude.toFloat(), longitude.toFloat(), altitude.toFloat())
         // Convert latitude and longitude to radians
         val latRad = Math.toRadians(latitude)
         val lonRad = Math.toRadians(longitude)
@@ -249,7 +291,8 @@ class MyGdxGame (
         val x = radius * cos(latRad) * cos(lonRad)
         val y = radius * cos(latRad) * sin(lonRad)
         val z = radius * sin(latRad)
-        return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
+        println("abaaba $x ${x.toFloat()} $y ${y.toFloat()} $z ${z.toFloat()}")
+        return Vector3(x.toFloat(), y.toFloat(), altitude.toFloat())
     }
 
     fun noDistanceChanged(){
@@ -269,9 +312,7 @@ class MyGdxGame (
                             objekt.size
                         )
                 )
-                makeTextForObject(index){ pos, rot ->
-                    objekt.name + "\n" + "%.2f".format(distance3D(cam!!.position, pos)) + " m"
-                }
+                showObjectsName(index)
             } else {
                 updateModel(index)
             }
@@ -381,8 +422,13 @@ class MyGdxGame (
     fun usingKotlinStringFormat(input: Float, scale: Int) = "%.${scale}f".format(input)
 
     private fun showObjectsName(index: Int) {
-        makeTextForObject(index) { pos, rot ->
-            objects[index].name + "\n" + usingKotlinStringFormat(distance3D(Vector3(0f,0f,0f), Vector3(objects[index].diffX, objects[index].diffY, objects[index].diffZ)), 2)
+        val objekt = objects[index]
+        /*makeTextForObject(index) { pos, rot ->
+            objects[index].name + "\n" + usingKotlinStringFormat(distance3D(Vector3(0f,0f,0f), Vector3(objects[index].x, objects[index].y, objects[index].z)), 2)
+        }*/
+
+        makeTextForObject(index){ pos, rot ->
+            objekt.name + "\n" + "%.2f".format(distance3D(camTranslatingVector, pos)) + " m\n%.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
         }
     }
 
@@ -408,11 +454,11 @@ class MyGdxGame (
     }
 
     fun getObjectsWithLimitedDistance(objekt: Objekt): Vector3{
-        var dist = distance3D(cam!!.position, Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
-        //var dist = distance(cam!!.position.x, cam!!.position.z, objekt.diffX, objekt.diffZ)
-        val degree = atan2(objekt.diffX, objekt.diffZ)
-        //val degreeY = atan2(objekt.diffY, sqrt(objekt.x * objekt.x + objekt.z * objekt.z))
-        val phi = acos(objekt.diffY / dist)
+        var dist = distance3D(camTranslatingVector, Vector3(objekt.x, objekt.y, objekt.z))
+        //var dist = distance(cam!!.position.x, cam!!.position.z, objekt.x, objekt.z)
+        val degree = atan2(objekt.x, objekt.z)
+        //val degreeY = atan2(objekt.y, sqrt(objekt.x * objekt.x + objekt.z * objekt.z))
+        val phi = acos(objekt.y / dist)
         if(dist > 50f) dist = 50f
 
         println(degree)
@@ -426,8 +472,8 @@ class MyGdxGame (
 
     fun getObjectsXZAfterRot(objekt: Objekt): MyPoint{
         val dist =
-            distance(cam!!.position.x, cam!!.position.z, objekt.diffX, objekt.diffZ)
-        val degree = atan2(objekt.diffX, objekt.diffZ)
+            distance(0f, 0f, objekt.x, objekt.z)
+        val degree = atan2(objekt.x, objekt.z)
 
         println(degree)
 
@@ -456,7 +502,6 @@ class MyGdxGame (
             worldRotationTmp = -(Gdx.input.x - startTouch.x) / 10f
         } else if(draggingVertical){
             worldUpDownTmp = -(Gdx.input.y - startTouch.y) / 10f
-            camHeightChange(camera.y - worldUpDown - worldUpDownTmp)
         }
     }
 
@@ -576,8 +621,8 @@ class MyGdxGame (
                 worldUpDownTmp = 0f
             } else if(selectedObject != -1 && modelMoving != null){
                 val myPoint = getObjectsXZAfterRot(objects[selectedObject])
-                objects[selectedObject].diffX = myPoint.x
-                objects[selectedObject].diffZ = myPoint.y
+                objects[selectedObject].x = myPoint.x
+                objects[selectedObject].z = myPoint.y
                 objects[selectedObject].changed = true
                 onChange(true)
                 modelMoving = null
@@ -597,7 +642,7 @@ class MyGdxGame (
                 onChange(true)
                 scalingObject = 0f
             } else if(modelMovingVertical != 0f){
-                objects[selectedObject].diffY += modelMovingVertical
+                objects[selectedObject].y += modelMovingVertical
                 objects[selectedObject].changed = true
                 modelMovingVertical = 0f
                 onChange(true)

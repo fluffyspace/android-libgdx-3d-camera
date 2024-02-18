@@ -119,10 +119,10 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
                     }
                 }
             },
-            { height ->
+            { pos ->
                 lifecycleScope.launch {
                     withContext(Dispatchers.Main) {
-                        camHeight.text = "Height: %.2f".format(height)
+                        camHeight.text = "Camera: %.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
                     }
                 }
             }
@@ -251,7 +251,7 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
 
             withContext(Dispatchers.Main){
                 //objects = tmpObjects
-                game.objectsUpdated()
+                game.updateObjectsCoordinates()
                 saveMenuLayout.visibility = View.GONE
             }
             game.noRender = false

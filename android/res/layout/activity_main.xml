@@ -23,15 +23,6 @@
                 android:layout_height="wrap_content" />
         </com.google.android.material.textfield.TextInputLayout>
     <Button
-        android:id="@+id/camera_set_coordinates_from_et"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:text="From text above"
-        android:textAllCaps="false"
-        android:layout_alignParentRight="true"
-        android:padding="20dp"/>
-    <Button
         android:id="@+id/camera_set_coordinates"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
