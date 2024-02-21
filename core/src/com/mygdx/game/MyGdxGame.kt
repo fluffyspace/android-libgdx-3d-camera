@@ -2,7 +2,6 @@ package com.mygdx.game
 
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
-import com.badlogic.gdx.Input.Keys.R
 import com.badlogic.gdx.graphics.Camera
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
@@ -97,6 +96,9 @@ class MyGdxGame (
 
     var editMode: EditMode? = null
     var cameraCartesian: Vector3 = Vector3()
+    var latitude = camera.x
+    lateinit var cameraEarthRot: Quaternion
+
 
     override fun create() {
         mapSprite = Sprite(Texture(Gdx.files.internal("badlogic.jpg")))
@@ -110,7 +112,15 @@ class MyGdxGame (
         // Constructs a new OrthographicCamera, using the given viewport width and height
         // Height is multiplied by aspect ratio.
         println("aba ${camera.x} ${camera.x.toDouble()} ${camera.y} ${camera.y.toDouble()} ${camera.z} ${camera.z.toDouble()} ")
-        cameraCartesian = toca(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
+        cameraCartesian = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
+
+        val normalVector: Vector3 = calculateNormalVector(Vector3(cameraCartesian.x, cameraCartesian.z, cameraCartesian.y))
+
+        // Align the camera orientation with the normal vector using quaternions
+
+        // Align the camera orientation with the normal vector using quaternions
+        cameraEarthRot = alignCameraOrientation(normalVector)
+
         cam = PerspectiveCamera(81f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
         cam!!.position.set(Vector3(0f, 0f, 0f))
         cam!!.lookAt(1f, 0f, 0f)
@@ -151,11 +161,12 @@ class MyGdxGame (
         lateinit var objectCartesian: Vector3
         println("ingo camera $cameraCartesian")
         for((index, objekt) in objects.withIndex()){
-                objectCartesian = toca(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
+            objectCartesian = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
             // i'm replacing y and z because y is vertical axis and z is in real world coordinates.
-            objekt.x = (objectCartesian.x - cameraCartesian.x)
-            objekt.z = (objectCartesian.y - cameraCartesian.y)
-            objekt.y = (objectCartesian.z - cameraCartesian.z)
+            objekt.diffX = (objectCartesian.x - cameraCartesian.x)
+            objekt.diffZ = (objectCartesian.y - cameraCartesian.y)
+            objekt.diffY = (objectCartesian.z - cameraCartesian.z)
+            println("${objectCartesian.z} - ${cameraCartesian.z} = ${objekt.y}")
             println("Dobio sam $objekt i ")
             //instances[index].add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
         }
@@ -178,11 +189,14 @@ class MyGdxGame (
             val aspect: Float = viewportWidth / viewportHeight
             projection.setToProjection(abs(near), abs(far), fieldOfView, aspect)
 
+            val newCoordinate = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble() + worldUpDown + worldUpDownTmp)
+            val cameraMoved = Vector3( newCoordinate.x-cameraCartesian.x, newCoordinate.z-cameraCartesian.z, newCoordinate.y-cameraCartesian.y)
+
             Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
             camTranslatingVector = Vector3(
-                0f,
-                worldUpDown + worldUpDownTmp,
-                0f
+                cameraMoved.x,
+                cameraMoved.y,
+                cameraMoved.z
             )
 
             //view.setToLookAt(position, cameraTmp.set(position).add(direction), up)
@@ -190,8 +204,9 @@ class MyGdxGame (
                 Matrix4()
                     .rotate(quat)
                     .rotate(upVector, worldRotation + worldRotationTmp)
+                    .rotate(cameraEarthRot)
                     //.rotate(xVector, 180f)
-                    .translate(Vector3(camTranslatingVector.x, -camTranslatingVector.y, camTranslatingVector.z))
+                    .translate(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
             )
             combined.set(projection)
             Matrix4.mul(combined.`val`, view.`val`)
@@ -203,6 +218,24 @@ class MyGdxGame (
         camHeightChange(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
     }
 
+    // Function to calculate the normal vector to the Earth's surface at a given location
+    fun calculateNormalVector(cameraPosition: Vector3): Vector3 {
+        // Assuming Earth's center is at (0, 0, 0) in ECEF coordinates
+        return Vector3(cameraPosition).nor()
+    }
+
+    // Function to align camera orientation with the normal vector using quaternions
+    fun alignCameraOrientation(normalVector: Vector3): Quaternion {
+        // Calculate the rotation axis perpendicular to the normal vector and the camera's current "up" direction
+        val rotationAxis: Vector3 = Vector3(normalVector).crs(Vector3.Y).nor()
+
+        // Calculate the angle between the normal vector and the camera's current "up" direction
+        val angle = acos(Vector3.Y.dot(normalVector))
+
+        // Create a quaternion representing the rotation
+        return Quaternion().setFromAxisRad(rotationAxis, angle)
+    }
+
     fun updateModel(index: Int){
         val objekt = objects[index]
         lateinit var translatingVector: Vector3
@@ -210,21 +243,36 @@ class MyGdxGame (
             val myPoint = getObjectsXZAfterRot(objekt)
             translatingVector = Vector3(
                 myPoint.x,
-                objekt.y,
-                myPoint.y
+                myPoint.y,
+                myPoint.z
+            )
+        } else if(modelMovingVertical != 0f) {
+
+            val moved = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), (objekt.z + modelMovingVertical).toDouble())
+            translatingVector = Vector3(
+                (moved.x - cameraCartesian.x),
+                (moved.z - cameraCartesian.z),
+                (moved.y - cameraCartesian.y),
             )
         } else {
             translatingVector = Vector3(
-                objekt.x,
-                objekt.y + modelMovingVertical,
-                objekt.z
+                objekt.diffX,
+                objekt.diffY,
+                objekt.diffZ
             )
         }
+        val normalVector: Vector3 = calculateNormalVector(Vector3(objekt.diffX, objekt.diffZ, objekt.diffY))
+
+        // Align the camera orientation with the normal vector using quaternions
+
+        // Align the camera orientation with the normal vector using quaternions
+        val objEarthRot = alignCameraOrientation(normalVector)
         //instances[index].transform.set(Matrix4())
         instances[index].transform.set(
             Matrix4().translate(translatingVector)
                 .rotate(upVector, modelRotatingY + objekt.rotationY)
                 .rotate(xVector, modelRotatingX + objekt.rotationX)
+                .rotate(objEarthRot)
                 .scale(
                     objekt.size + scalingObject,
                     objekt.size + scalingObject,
@@ -235,47 +283,6 @@ class MyGdxGame (
 
     // Earth radius in meters
     private val EARTH_RADIUS = 6371000.0
-
-    fun toca(latitude: Double, longitude: Double, height: Double): Vector3{
-
-
-        return geoToCartesian(latitude, longitude, height)
-        // Define the major and minor radius of the earth in meters
-        // Define the major and minor radius of the earth in meters
-        val RADIUS_MAJOR = 6378137.0
-        val RADIUS_MINOR = 6356752.3142
-
-// Calculate the eccentricity of the ellipsoid
-
-// Calculate the eccentricity of the ellipsoid
-        val e = Math.sqrt(1 - RADIUS_MINOR * RADIUS_MINOR / (RADIUS_MAJOR * RADIUS_MAJOR))
-
-// Convert longitude to x value in meters
-
-// Convert longitude to x value in meters
-        val x = Math.toRadians(longitude) * RADIUS_MAJOR
-
-// Convert latitude to y value in meters
-
-// Convert latitude to y value in meters
-        val y = RADIUS_MAJOR * Math.log(
-            Math.tan(Math.PI / 4 + Math.toRadians(latitude) / 2) * Math.pow(
-                (1 - e * Math.sin(
-                    Math.toRadians(latitude)
-                )) / (1 + e * Math.sin(Math.toRadians(latitude))), e / 2
-            )
-        )
-
-// Calculate the z value in meters using the height above the ellipsoid
-
-// Calculate the z value in meters using the height above the ellipsoid
-        val z: Double = height - RADIUS_MINOR + e * e * RADIUS_MINOR * Math.pow(
-            Math.sin(Math.toRadians(latitude)),
-            2.0
-        )
-        println("$x $y $z")
-        return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
-    }
 
     // Convert latitude, longitude, and altitude to Cartesian coordinates
     fun geoToCartesian(latitude: Double, longitude: Double, altitude: Double): Vector3 {
@@ -292,7 +299,7 @@ class MyGdxGame (
         val y = radius * cos(latRad) * sin(lonRad)
         val z = radius * sin(latRad)
         println("abaaba $x ${x.toFloat()} $y ${y.toFloat()} $z ${z.toFloat()}")
-        return Vector3(x.toFloat(), y.toFloat(), altitude.toFloat())
+        return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
     }
 
     fun noDistanceChanged(){
@@ -440,6 +447,18 @@ class MyGdxGame (
         }
     }
 
+    fun translatePoint(
+        sourcePoint: Vector3?,
+        targetPoint: Vector3?,
+        distance: Float
+    ): Vector3? {
+        // Calculate the vector from source to target
+        val direction: Vector3 = Vector3(targetPoint).sub(sourcePoint).nor().scl(distance)
+
+        // Add the scaled direction vector to the source point to get the new position
+        return Vector3(sourcePoint).add(direction)
+    }
+
     fun makeTextForObject(index: Int, toText: (Vector3, Vector3) -> String){
         val model = instances[index]
         val screenPosition = projectObject(model)
@@ -470,7 +489,7 @@ class MyGdxGame (
         return Vector3(x, y, z)
     }
 
-    fun getObjectsXZAfterRot(objekt: Objekt): MyPoint{
+    fun getObjectsXZAfterRot(objekt: Objekt): Vector3{
         val dist =
             distance(0f, 0f, objekt.x, objekt.z)
         val degree = atan2(objekt.x, objekt.z)
@@ -479,7 +498,7 @@ class MyGdxGame (
 
         val x = (dist + modelMoving!!.radius) * sin(degree + modelMoving!!.degrees)
         val z = (dist + modelMoving!!.radius) * cos(degree + modelMoving!!.degrees)
-        return MyPoint(x,z)
+        return Vector3()
     }
 
     fun dragTresholdOnAxisCheck(){
@@ -642,7 +661,15 @@ class MyGdxGame (
                 onChange(true)
                 scalingObject = 0f
             } else if(modelMovingVertical != 0f){
-                objects[selectedObject].y += modelMovingVertical
+                val moved = geoToCartesian(objects[selectedObject].x.toDouble(), objects[selectedObject].y.toDouble(), (objects[selectedObject].z + modelMovingVertical).toDouble())
+                val translatingVector = Vector3(
+                    (moved.x - cameraCartesian.x),
+                    (moved.z - cameraCartesian.z),
+                    (moved.y - cameraCartesian.y),
+                )
+                objects[selectedObject].x = moved.x
+                objects[selectedObject].y = moved.y
+                objects[selectedObject].z = moved.z
                 objects[selectedObject].changed = true
                 modelMovingVertical = 0f
                 onChange(true)
