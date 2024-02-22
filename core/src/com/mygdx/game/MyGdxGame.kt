@@ -29,7 +29,6 @@ import com.badlogic.gdx.utils.viewport.ExtendViewport
 import com.mygdx.game.notbaza.Objekt
 import kotlin.math.abs
 import kotlin.math.acos
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -98,6 +97,7 @@ class MyGdxGame (
     var cameraCartesian: Vector3 = Vector3()
     var latitude = camera.x
     lateinit var cameraEarthRot: Quaternion
+    lateinit var normalVector: Vector3
 
 
     override fun create() {
@@ -114,7 +114,7 @@ class MyGdxGame (
         println("aba ${camera.x} ${camera.x.toDouble()} ${camera.y} ${camera.y.toDouble()} ${camera.z} ${camera.z.toDouble()} ")
         cameraCartesian = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
 
-        val normalVector: Vector3 = calculateNormalVector(Vector3(cameraCartesian.x, cameraCartesian.z, cameraCartesian.y))
+        normalVector = calculateNormalVector(Vector3(cameraCartesian.x, cameraCartesian.z, cameraCartesian.y))
 
         // Align the camera orientation with the normal vector using quaternions
 
@@ -155,19 +155,26 @@ class MyGdxGame (
             updateModel(instances.lastIndex)
         }
     }
+    lateinit var tmpObjectCartesian: Vector3
+    fun updateObjectCoordinates(objekt: Objekt){
+        tmpObjectCartesian = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
+        // i'm replacing y and z because y is vertical axis and z is in real world coordinates.
+        objekt.diffX = (tmpObjectCartesian.x - cameraCartesian.x)
+        objekt.diffZ = (tmpObjectCartesian.y - cameraCartesian.y)
+        objekt.diffY = (tmpObjectCartesian.z - cameraCartesian.z)
+        println("${tmpObjectCartesian.z} - ${cameraCartesian.z} = ${objekt.y}")
+        println("Dobio sam $objekt i ")
+    }
+
+    fun fromCartesianToGeo(){
+
+    }
 
     fun updateObjectsCoordinates(){
         selectedObject = -1
-        lateinit var objectCartesian: Vector3
         println("ingo camera $cameraCartesian")
         for((index, objekt) in objects.withIndex()){
-            objectCartesian = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
-            // i'm replacing y and z because y is vertical axis and z is in real world coordinates.
-            objekt.diffX = (objectCartesian.x - cameraCartesian.x)
-            objekt.diffZ = (objectCartesian.y - cameraCartesian.y)
-            objekt.diffY = (objectCartesian.z - cameraCartesian.z)
-            println("${objectCartesian.z} - ${cameraCartesian.z} = ${objekt.y}")
-            println("Dobio sam $objekt i ")
+            updateObjectCoordinates(objekt)
             //instances[index].add(ModelInstance(generateModelForObject(objekt.libgdxcolor)).apply { transform.setToTranslation(0f, 0f, 0f) })
         }
         toggleEditMode(false)
@@ -205,6 +212,7 @@ class MyGdxGame (
                     .rotate(quat)
                     .rotate(upVector, worldRotation + worldRotationTmp)
                     .rotate(cameraEarthRot)
+                    //.rotate(upVector, 180f)
                     //.rotate(xVector, 180f)
                     .translate(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
             )
@@ -230,10 +238,10 @@ class MyGdxGame (
         val rotationAxis: Vector3 = Vector3(normalVector).crs(Vector3.Y).nor()
 
         // Calculate the angle between the normal vector and the camera's current "up" direction
-        val angle = acos(Vector3.Y.dot(normalVector))
+        val angle = acos((Vector3.Y).dot(normalVector))
 
         // Create a quaternion representing the rotation
-        return Quaternion().setFromAxisRad(rotationAxis, angle)
+        return Quaternion().setFromAxisRad(rotationAxis, (angle+Math.PI).toFloat())
     }
 
     fun updateModel(index: Int){
@@ -247,7 +255,6 @@ class MyGdxGame (
                 myPoint.z
             )
         } else if(modelMovingVertical != 0f) {
-
             val moved = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), (objekt.z + modelMovingVertical).toDouble())
             translatingVector = Vector3(
                 (moved.x - cameraCartesian.x),
@@ -448,10 +455,10 @@ class MyGdxGame (
     }
 
     fun translatePoint(
-        sourcePoint: Vector3?,
-        targetPoint: Vector3?,
+        sourcePoint: Vector3,
+        targetPoint: Vector3,
         distance: Float
-    ): Vector3? {
+    ): Vector3 {
         // Calculate the vector from source to target
         val direction: Vector3 = Vector3(targetPoint).sub(sourcePoint).nor().scl(distance)
 
@@ -473,33 +480,70 @@ class MyGdxGame (
     }
 
     fun getObjectsWithLimitedDistance(objekt: Objekt): Vector3{
-        var dist = distance3D(camTranslatingVector, Vector3(objekt.x, objekt.y, objekt.z))
-        //var dist = distance(cam!!.position.x, cam!!.position.z, objekt.x, objekt.z)
-        val degree = atan2(objekt.x, objekt.z)
-        //val degreeY = atan2(objekt.y, sqrt(objekt.x * objekt.x + objekt.z * objekt.z))
-        val phi = acos(objekt.y / dist)
-        if(dist > 50f) dist = 50f
 
-        println(degree)
+        var dist = distance3D(camTranslatingVector, Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
+        var substractedDistance = 0f
+        if(dist <= 50f) return Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+        substractedDistance = -50 + dist
 
-        val x = (dist) * sin(degree)
-        val y = (dist) * cos(phi)
-        val z = (dist) * cos(degree)
-
-        return Vector3(x, y, z)
+        return translatePoint(Vector3(objekt.diffX, objekt.diffY, objekt.diffZ), camTranslatingVector, substractedDistance)
     }
 
     fun getObjectsXZAfterRot(objekt: Objekt): Vector3{
-        val dist =
-            distance(0f, 0f, objekt.x, objekt.z)
-        val degree = atan2(objekt.x, objekt.z)
+        //val geo = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
 
-        println(degree)
 
-        val x = (dist + modelMoving!!.radius) * sin(degree + modelMoving!!.degrees)
-        val z = (dist + modelMoving!!.radius) * cos(degree + modelMoving!!.degrees)
-        return Vector3()
+
+        var dist = distance3D(camTranslatingVector, Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
+
+        val newpoint = translatePoint(Vector3(objekt.diffX, objekt.diffY, objekt.diffZ), camTranslatingVector, -modelMoving!!.radius)
+        //return newpoint
+        return rotatePointAroundPoint(newpoint, camTranslatingVector, -modelMoving!!.degrees)
     }
+
+    fun rotatePointAroundPoint(
+        pointToRotate: Vector3,
+        rotationCenter: Vector3,
+        angleDegrees: Float
+    ): Vector3 {
+        // Calculate the axis of rotation (normalized direction vector from rotation center to pointToRotate)
+
+        // Align the camera orientation with the normal vector using quaternions
+
+
+        // Create a quaternion representing the rotation
+        val quaternion: Quaternion = Quaternion().set(normalVector, angleDegrees)
+
+        // Translate the point to the origin (rotation center)
+        val translatedPoint: Vector3 = Vector3(pointToRotate).sub(rotationCenter)
+
+        // Rotate the translated point using the quaternion
+        quaternion.transform(translatedPoint)
+
+        // Translate the point back to its original position
+        translatedPoint.add(rotationCenter)
+        return quaternion.transform(pointToRotate.sub(rotationCenter)).add(rotationCenter);
+    }
+
+    /*fun rotatePointAroundPoint(
+        pointToRotate: Vector3,
+        rotationCenter: Vector3,
+        angleDegrees: Float
+    ): Vector3 {
+        // Calculate the vector from the rotation center to the point to rotate
+        val translationVector: Vector3 = Vector3(pointToRotate).sub(rotationCenter)
+
+        // Create a rotation matrix for the desired rotation
+        val rotationMatrix: Matrix4 =
+            Matrix4().rotate(Vector3(0f, 1f, 0f), Math.toRadians(angleDegrees.toDouble()).toFloat())
+
+        // Rotate the translation vector
+        val rotatedTranslationVector = Vector3()
+        rotationMatrix.rotateTowardDirection(translationVector, rotatedTranslationVector)
+
+        // Add the rotated translation vector to the rotation center to get the new position
+        return Vector3(rotationCenter).add(rotatedTranslationVector)
+    }*/
 
     fun dragTresholdOnAxisCheck(){
         if(abs(Gdx.input.x - startTouch.x) >= dragTreshold){
@@ -571,7 +615,7 @@ class MyGdxGame (
             return
         }
         modelMoving!!.radius = -(Gdx.input.y - startTouch.y)/10f
-        modelMoving!!.degrees = -(Gdx.input.x - startTouch.x)/700f
+        modelMoving!!.degrees = -(Gdx.input.x - startTouch.x)/5f
     }
 
     fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
@@ -640,8 +684,9 @@ class MyGdxGame (
                 worldUpDownTmp = 0f
             } else if(selectedObject != -1 && modelMoving != null){
                 val myPoint = getObjectsXZAfterRot(objects[selectedObject])
-                objects[selectedObject].x = myPoint.x
-                objects[selectedObject].z = myPoint.y
+                objects[selectedObject].diffX = myPoint.x
+                objects[selectedObject].diffY = myPoint.y
+                objects[selectedObject].diffZ = myPoint.z
                 objects[selectedObject].changed = true
                 onChange(true)
                 modelMoving = null
@@ -661,15 +706,8 @@ class MyGdxGame (
                 onChange(true)
                 scalingObject = 0f
             } else if(modelMovingVertical != 0f){
-                val moved = geoToCartesian(objects[selectedObject].x.toDouble(), objects[selectedObject].y.toDouble(), (objects[selectedObject].z + modelMovingVertical).toDouble())
-                val translatingVector = Vector3(
-                    (moved.x - cameraCartesian.x),
-                    (moved.z - cameraCartesian.z),
-                    (moved.y - cameraCartesian.y),
-                )
-                objects[selectedObject].x = moved.x
-                objects[selectedObject].y = moved.y
-                objects[selectedObject].z = moved.z
+                objects[selectedObject].z += modelMovingVertical
+                updateObjectCoordinates(objects[selectedObject])
                 objects[selectedObject].changed = true
                 modelMovingVertical = 0f
                 onChange(true)
