@@ -11,6 +11,9 @@ interface ObjektDao {
     @Query("SELECT * FROM Objekt WHERE id = :id")
     fun findById(id: Int): List<Objekt>
 
+    @Query("DELETE FROM Objekt WHERE id = :id")
+    fun deleteById(id: Int)
+
     @Insert
     fun insertAll(vararg polja: Objekt): List<Long>
 

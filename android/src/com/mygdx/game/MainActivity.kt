@@ -10,28 +10,29 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Toast
-import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.room.Room
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
+import com.mygdx.game.ObjectAddEditListener.Companion.textToObject
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
 import com.mygdx.game.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -42,8 +43,7 @@ import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
 
-class MainActivity : AppCompatActivity(), CoordinateAddListener,
-    AddOrEditObjectDialog.AddOrEditObjectDialogListener, ObjectsAdapter.ObjectClickListener {
+class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.ObjectClickListener {
     lateinit var binding: ActivityMainBinding
     var fusedLocationClient: FusedLocationProviderClient? = null
 
@@ -51,6 +51,8 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
     lateinit var objects: MutableList<Objekt>
     var objectsAdapter: ObjectsAdapter? = null
     val cameraDataStoreKey: Preferences.Key<String> = stringPreferencesKey("camera_coordinates")
+
+    lateinit var listener: ObjectAddEditListener
 
     lateinit var db: AppDatabase
     val locationPermissionRequest: ActivityResultLauncher<Array<String>> by lazy {
@@ -78,6 +80,13 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        binding.map.setOnClickListener {
+            updateCoordinates() { objekt ->
+                val intent = Intent(this@MainActivity, MapViewer::class.java)
+                intent.putExtra("coordinates", Gson().toJson(objekt))
+                startActivity(intent)
+            }
+        }
         binding.openViewer.setOnClickListener {
             Log.d("ingo", "open viewer")
 
@@ -100,6 +109,11 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                     cameraDataStoreKey,
                     Gson().toJson(objekt)
                 )
+                Toast.makeText(
+                    this@MainActivity,
+                    "Lokacija postavljena.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
         camera = Objekt(0, 0f, 0f, 0f)
@@ -131,6 +145,31 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         }
         readFromDataStore()
         hasLocationPermission()
+
+        listener = ObjectAddEditListener({objekt ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                Log.d("ingo", "dodan objekt")
+                db.objektDao().insertAll(objekt)
+                objects.add(objekt)
+                withContext(Dispatchers.Main) {
+                    objectsAdapter?.dataSet?.size?.let { size ->
+                        objectsAdapter?.notifyItemInserted(size - 1)
+                    }
+                }
+            }
+        }, {objekt ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                Log.d("ingo", "edited objekt")
+                db.objektDao().update(objekt)
+                val adapterItemIndex = objects.indexOfFirst { it.id == objekt.id }
+                objects[adapterItemIndex] = objekt
+                withContext(Dispatchers.Main) {
+                    objectsAdapter?.dataSet?.size?.let { size ->
+                        objectsAdapter?.notifyItemChanged(adapterItemIndex)
+                    }
+                }
+            }
+        })
     }
 
     fun setFromET(): Boolean{
@@ -151,6 +190,16 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
             withContext(Dispatchers.Main){
                 if(objectsAdapter == null) {
                     objectsAdapter = ObjectsAdapter(objects, this@MainActivity)
+
+                    val divider = DividerItemDecoration(
+                        binding.recyclerView.context, DividerItemDecoration.VERTICAL
+                    )
+                    divider.setDrawable(
+                        ContextCompat.getDrawable(baseContext, R.drawable.line_divider)!!
+                    )
+
+                    binding.recyclerView.addItemDecoration(divider)
+
                     binding.recyclerView.adapter = objectsAdapter
                     binding.recyclerView.layoutManager = LinearLayoutManager(this@MainActivity)
                 } else {
@@ -162,26 +211,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         }
     }
 
-    fun textToObject(text: String): com.mygdx.game.baza.Objekt?{
-        val coordinates = text.split(",".toRegex())
-            .dropLastWhile { it.isEmpty() }
-            .toTypedArray()
-        Log.d("ingo", coordinates.contentToString())
-        if (coordinates.size != 3) return null
-        try {
-            return com.mygdx.game.baza.Objekt(0,
-                coordinates[0].toFloat(),
-                coordinates[1].toFloat(),
-                coordinates[2].toFloat()
-            )
-            //updateDataStore(cameraDataStoreKey, Gson().toJson(camera))
-        } catch (e: NullPointerException) {
-            e.printStackTrace()
-        } catch (e: NumberFormatException) {
-            e.printStackTrace()
-        }
-        return null
-    }
+
 
     fun hasLocationPermission(): Boolean{
         if (ActivityCompat.checkSelfPermission(
@@ -223,11 +253,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                         // Logic to handle location object
                         onLocationResult(Objekt(0,
                             location.latitude.toFloat(), location.longitude.toFloat(), 0f))
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Lokacija postavljena.",
-                            Toast.LENGTH_SHORT
-                        ).show()
+
                     }
                 }.addOnFailureListener { e ->
                     Log.d("ingo", "onFailure")
@@ -324,63 +350,11 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         }
     }
 
-    override fun onClickAddObject(coordinates: String, name: String, color: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            textToObject(coordinates)?.apply {
-                this.name = name
-                if(color != "") {
-                    try {
-                        this.color = Color.parseColor(color)
-                    }catch(e: NumberFormatException){
 
-                    }
-                }
-            }?.let { objekt ->
-                Log.d("ingo", "dodan objekt")
-                db.objektDao().insertAll(objekt)
-                objects.add(objekt)
-                withContext(Dispatchers.Main){
-                    objectsAdapter?.dataSet?.size?.let {size ->
-                        objectsAdapter?.notifyItemInserted(size-1)
-                    }
-                }
-            }
-        }
-    }
-
-    override fun onClickEditObject(
-        objekt: Objekt,
-        coordinates: String,
-        name: String,
-        color: String
-    ) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            textToObject(coordinates)?.apply {
-                this.name = name
-                if(color != "") {
-                    try {
-                        this.color = Color.parseColor(color)
-                    }catch(e: NumberFormatException){
-
-                    }
-                }
-                this.id = objekt.id
-            }?.let { objekt ->
-                Log.d("ingo", "edited objekt")
-                db.objektDao().update(objekt)
-                val adapterItemIndex = objects.indexOfFirst { it.id == objekt.id }
-                objects[adapterItemIndex] = objekt
-                withContext(Dispatchers.Main){
-                    objectsAdapter?.dataSet?.size?.let {size ->
-                        objectsAdapter?.notifyItemChanged(adapterItemIndex)
-                    }
-                }
-            }
-        }
-    }
 
     override fun onClickOnObject(objekt: Objekt) {
         val addNewObjectDialog = AddOrEditObjectDialog(objekt)
+        addNewObjectDialog.setListener(listener)
         addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
     }
 

@@ -8,43 +8,48 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Adding new object"
-        android:textSize="18sp"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Headline5"
         android:textStyle="bold"
         android:padding="10dp"/>
-    <EditText
-        android:id="@+id/coordinates"
-        android:inputType="text"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginLeft="4dp"
-        android:layout_marginRight="4dp"
-        android:layout_marginBottom="4dp"
-        android:hint="latitude, longitude, altitude" />
-    <EditText
-        android:id="@+id/name"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginLeft="4dp"
-        android:layout_marginRight="4dp"
-        android:fontFamily="sans-serif"
-        android:inputType="textCapSentences"
-        android:hint="Name"/>
 
-    <EditText
-        android:id="@+id/color"
+    <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="4dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginRight="4dp"
-        android:fontFamily="sans-serif"
-        android:hint="Color (#rrggbb)" />
+        android:hint="Latitude, longitude, altitude">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/coordinates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+    </com.google.android.material.textfield.TextInputLayout>
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Name">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+    </com.google.android.material.textfield.TextInputLayout>
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Color in hex">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/color"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+    </com.google.android.material.textfield.TextInputLayout>
 
     <View
         android:id="@+id/color_preview"
         android:layout_width="match_parent"
-        android:layout_height="30dp"
-        android:background="#00ff00"/>
+        android:layout_height="50dp"
+        android:layout_marginTop="10dp"
+        android:background="#ffffff"/>
 </LinearLayout>

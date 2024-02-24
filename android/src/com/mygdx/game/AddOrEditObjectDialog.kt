@@ -1,5 +1,6 @@
 package com.mygdx.game
 
+import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
@@ -12,16 +13,19 @@ import android.view.View
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
+import org.osmdroid.util.GeoPoint
 
 class AddOrEditObjectDialog(var objectToEdit: com.mygdx.game.baza.Objekt?): DialogFragment() {
 
-    internal lateinit var listener: AddOrEditObjectDialogListener
+    private lateinit var listener: AddOrEditObjectDialogListener
 
     lateinit var colorPreview: View
     lateinit var coordinatesEditText: EditText
     lateinit var nameEditText: EditText
     lateinit var colorEditText: EditText
+    var futureCoordinates: String? = null
 
     // The activity that creates an instance of this dialog fragment must
     // implement this interface to receive event callbacks. Each method passes
@@ -31,13 +35,23 @@ class AddOrEditObjectDialog(var objectToEdit: com.mygdx.game.baza.Objekt?): Dial
         fun onClickEditObject(objekt: com.mygdx.game.baza.Objekt, coordinates: String, name: String, color: String)
     }
 
+    fun setListener(l: AddOrEditObjectDialogListener){
+        listener = l
+    }
+
+    fun setCoordinates(point: GeoPoint){
+        futureCoordinates = "${point.latitude}, ${point.longitude}, 0.0"
+        if(this::coordinatesEditText.isInitialized) {
+            coordinatesEditText.setText(futureCoordinates)
+        }
+    }
+
     override fun onAttach(context: Context) {
         super.onAttach(context)
         // Verify that the host activity implements the callback interface.
         try {
             // Instantiate the AddNewObjectDialogListener so you can send events to
             // the host.
-            listener = context as AddOrEditObjectDialogListener
         } catch (e: ClassCastException) {
             // The activity doesn't implement the interface. Throw exception.
             throw ClassCastException((context.toString() +
@@ -58,6 +72,9 @@ class AddOrEditObjectDialog(var objectToEdit: com.mygdx.game.baza.Objekt?): Dial
 
             colorPreview = view.findViewById<View>(R.id.color_preview)
             coordinatesEditText = view.findViewById<EditText>(R.id.coordinates)
+            if(futureCoordinates != null){
+                coordinatesEditText.setText(futureCoordinates)
+            }
             nameEditText = view.findViewById<EditText>(R.id.name)
             colorEditText = view.findViewById<EditText>(R.id.color)
             colorEditText.addTextChangedListener(object : TextWatcher{
