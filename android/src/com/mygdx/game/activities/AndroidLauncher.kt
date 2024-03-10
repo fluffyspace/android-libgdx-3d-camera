@@ -1,5 +1,6 @@
 package com.mygdx.game.activities
 
+import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -8,9 +9,22 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
+import android.media.Image
+import android.media.ImageReader
 import android.os.Build
 import android.os.Bundle
+import android.os.ConditionVariable
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
+import android.util.Size
+import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -20,16 +34,23 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
+import com.google.ar.core.ArCoreApk
+import com.google.ar.core.CameraConfig
+import com.google.ar.core.CameraConfigFilter
+import com.google.ar.core.Config
+import com.google.ar.core.ImageFormat
+import com.google.ar.core.Session
+import com.google.ar.core.exceptions.CameraNotAvailableException
+import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.mygdx.game.AndroidDeviceCameraController
+import com.mygdx.game.BackgroundRenderer
 import com.mygdx.game.MyGdxGame
 import com.mygdx.game.OnDrawFrame
 import com.mygdx.game.OrientationIndicator
@@ -43,11 +64,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.lang.StringBuilder
-import kotlin.math.abs
-import kotlin.math.roundToInt
+import java.util.Arrays
+import java.util.EnumSet
+import java.util.concurrent.atomic.AtomicBoolean
 
-class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventListener {
+
+class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventListener,
+    ImageReader.OnImageAvailableListener {
+    val shouldUpdateSurfaceTexture = AtomicBoolean(false)
+    private var arcoreActive: Boolean = false
+    private var arMode: Boolean = true
+    private var previewCaptureRequestBuilder: android.hardware.camera2.CaptureRequest.Builder? = null
     private var mHeadTracker: HeadTracker? = null
     private var origWidth = 0
     private var origHeight = 0
@@ -64,6 +91,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     lateinit var orientationSeekbarJob: Job
     lateinit var moveButton: ImageView
     lateinit var moveVerticalButton: ImageView
+    lateinit var arButton: ImageView
     lateinit var rotateButton: ImageView
     lateinit var scaleButton: ImageView
     var transformButtons: List<ImageView> = listOf()
@@ -108,12 +136,29 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     var calibrationCounter = 0
     var calibrationList = mutableListOf<Int>()
 
+    // requestInstall(Activity, true) will triggers installation of
+    // Google Play Services for AR if necessary.
+    var mUserRequestedInstall = true
+    var mSession: Session? = null
+    var sharedCamera: com.google.ar.core.SharedCamera? = null
+    var captureSession: CameraCaptureSession? = null
+    var cameraId: String = ""
+    var cameraDevice: CameraDevice? = null
+    var backgroundHandler: Handler? = null
+
+    var backgroundThread: HandlerThread? = null
+
+    val backgroundRenderer: BackgroundRenderer = BackgroundRenderer()
+
+    private var cpuImageReader: ImageReader? = null
+
+    // A check mechanism to ensure that the camera closed properly so that the app can safely exit.
+    private val safeToExitApp = ConditionVariable()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mHeadTracker = HeadTracker(this)
 
-        lateinit var config: AndroidApplicationConfiguration
-        config = AndroidApplicationConfiguration()
+        var config = AndroidApplicationConfiguration()
         config.useAccelerometer = false
         config.useCompass = false
         config.useGyroscope = false
@@ -177,6 +222,198 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                 }
             }
         }
+        maybeEnableArButton()
+    }
+
+    fun openCamera(){
+        createSession()
+        // Wrap the callback in a shared camera callback.
+        val wrappedCallback = sharedCamera!!.createARDeviceStateCallback(cameraDeviceCallback, backgroundHandler)
+
+        // Store a reference to the camera system service.
+        val cameraManager = this.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+        // Open the camera device using the ARCore wrapped callback.
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return
+        }
+        cameraManager.openCamera(cameraId, wrappedCallback, backgroundHandler)
+
+    }
+
+    // Define cameraDeviceCallback
+    val cameraDeviceCallback = object : CameraDevice.StateCallback() {
+        override fun onOpened(camera: CameraDevice) {
+            // This method is called when the camera device is opened.
+            // You can start camera preview or other operations here.
+            this@AndroidLauncher.onOpened(camera)
+        }
+
+        override fun onDisconnected(camera: CameraDevice) {
+            // This method is called when the camera device is disconnected.
+            // Clean up resources and handle the disconnection.
+        }
+
+        override fun onClosed(camera: CameraDevice) {
+            super.onClosed(camera)
+            cameraDevice = null
+            safeToExitApp.open();
+        }
+
+        override fun onError(camera: CameraDevice, error: Int) {
+            // This method is called when an error occurs with the camera device.
+            // Handle the error appropriately.
+        }
+    }
+
+
+    fun onOpened(cameraDevice: CameraDevice) {
+        Log.d(TAG, "Camera device ID " + cameraDevice.id + " opened.")
+        this.cameraDevice = cameraDevice
+        createCameraPreviewSession()
+
+    }
+
+    fun createCameraPreviewSession() {
+        try {
+            // Create an ARCore-compatible capture request using `TEMPLATE_RECORD`.
+            mSession?.setCameraTextureName(backgroundRenderer.textureId);
+            sharedCamera?.surfaceTexture?.setOnFrameAvailableListener(cameraControl);
+
+            previewCaptureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+
+            // Build a list of surfaces, starting with ARCore provided surfaces.
+            val surfaceList: MutableList<Surface> = sharedCamera!!.arCoreSurfaces
+
+            surfaceList.add(cpuImageReader!!.surface);
+
+            // Add ARCore surfaces and CPU image surface targets.
+            for (surface in surfaceList) {
+                previewCaptureRequestBuilder!!.addTarget(surface)
+            }
+
+            // Wrap the callback in a shared camera callback.
+            val wrappedCallback = sharedCamera!!.createARSessionStateCallback(cameraSessionStateCallback, backgroundHandler)
+
+            // Create a camera capture session for camera preview using an ARCore wrapped callback.
+            cameraDevice!!.createCaptureSession(surfaceList, wrappedCallback, backgroundHandler)
+        } catch (e: CameraAccessException) {
+            Log.e(TAG, "CameraAccessException", e)
+        }
+    }
+
+    // Start background handler thread, used to run callbacks without blocking UI thread.
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("sharedCameraBackground")
+        backgroundThread!!.start()
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    // Stop background handler thread.
+    private fun stopBackgroundThread() {
+        if (backgroundThread != null) {
+            backgroundThread!!.quitSafely()
+            try {
+                backgroundThread!!.join()
+                backgroundThread = null
+                backgroundHandler = null
+            } catch (e: InterruptedException) {
+                Log.e(TAG, "Interrupted while trying to join background handler thread", e)
+            }
+        }
+    }
+
+
+    val cameraSessionStateCallback = object : CameraCaptureSession.StateCallback() {
+        // Called when ARCore first configures the camera capture session after
+        // initializing the app, and again each time the activity resumes.
+        override fun onConfigured(session: CameraCaptureSession) {
+            Log.d("ingo", "onConfigured")
+            captureSession = session
+            setRepeatingCaptureRequest()
+        }
+
+        override fun onConfigureFailed(p0: CameraCaptureSession) {
+            //TODO("Not yet implemented")
+        }
+
+        override fun onActive(session: CameraCaptureSession) {
+            if (arMode && !arcoreActive) {
+                resumeARCore()
+            }
+        }
+    }
+
+    val cameraCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            shouldUpdateSurfaceTexture.set(true)
+        }
+    }
+
+    fun setRepeatingCaptureRequest() {
+        captureSession!!.setRepeatingRequest(
+            previewCaptureRequestBuilder!!.build(), cameraCaptureCallback, backgroundHandler
+        )
+    }
+
+    fun resumeARCore() {
+        if (!arcoreActive) {
+            try {
+                // Resume ARCore.
+                backgroundRenderer.suppressTimestampZeroRendering(false);
+                mSession?.resume()
+                arcoreActive = true
+
+                // Set the capture session callback while in AR mode.
+                sharedCamera!!.setCaptureCallback(cameraCaptureCallback, backgroundHandler)
+            } catch (e: CameraNotAvailableException) {
+                Log.e(TAG, "Failed to resume ARCore session", e);
+                return;
+            }
+        }
+    }
+
+    private fun closeCamera() {
+        if (captureSession != null) {
+            captureSession!!.close()
+            captureSession = null
+        }
+        if (cameraDevice != null) {
+            //waitUntilCameraCaptureSessionIsActive()
+            safeToExitApp.close()
+            cameraDevice!!.close()
+            safeToExitApp.block()
+        }
+        if (cpuImageReader != null) {
+            cpuImageReader!!.close()
+            cpuImageReader = null
+        }
+    }
+
+    fun maybeEnableArButton() {
+        val availability = ArCoreApk.getInstance().checkAvailability(this)
+        if (availability.isSupported) {
+            arButton.visibility = View.VISIBLE
+            arButton.isEnabled = true
+        } else { // The device is unsupported or unknown.
+            arButton.visibility = View.INVISIBLE
+            arButton.isEnabled = false
+        }
     }
 
     fun startCalibration(){
@@ -239,6 +476,14 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         editModeLayout.visibility = View.GONE
         moveButton = editModeLayout.findViewById<ImageView>(R.id.move)
         moveVerticalButton = editModeLayout.findViewById<ImageView>(R.id.move_up_down)
+        arButton = this.fieldOfViewLayout.findViewById<ImageView>(R.id.ar)
+        arButton.setOnClickListener {
+            //createSession()
+            //openCamera()
+            runOnUiThread{
+                cameraControl.prepareCamera()
+            }
+        }
         rotateButton = editModeLayout.findViewById<ImageView>(R.id.rotate)
         scaleButton = editModeLayout.findViewById<ImageView>(R.id.scale)
         transformButtons = listOf(moveButton, moveVerticalButton, rotateButton, scaleButton)
@@ -390,61 +635,52 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     }
 
     private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
-        cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            // Preview
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    cameraControl.prepareCamera()
-                    it.setSurfaceProvider(cameraControl.previewView.surfaceProvider)
-                }
-
-            // Select back camera as a default
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                // Unbind use cases before rebinding
-                cameraProvider.unbindAll()
-
-                // Bind use cases to camera
-                cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview)
-
-            } catch(exc: Exception) {
-                Log.e(TAG, "Use case binding failed", exc)
-            }
-
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    fun post(r: Runnable?) {
-        handler.post(r!!)
-    }
-
-    fun setFixedSize(width: Int, height: Int) {
-        if (graphics.view is SurfaceView) {
-            val glView = graphics.view as SurfaceView
-            glView.holder.setFormat(PixelFormat.TRANSLUCENT)
-            glView.holder.setFixedSize(width, height)
-        }
-    }
-
-    fun restoreFixedSize() {
-        if (graphics.view is SurfaceView) {
-            val glView = graphics.view as SurfaceView
-            glView.holder.setFormat(PixelFormat.TRANSLUCENT)
-            glView.holder.setFixedSize(origWidth, origHeight)
-        }
     }
 
     override fun onResume() {
         super.onResume()
         mHeadTracker!!.startTracking()
+        // Ensure that Google Play Services for AR and ARCore device profile data are
+        // installed and up to date.
+        mSession?.resume()
+        startBackgroundThread();
+        try {
+            if (mSession == null) {
+                when (ArCoreApk.getInstance().requestInstall(this, mUserRequestedInstall)) {
+                    ArCoreApk.InstallStatus.INSTALLED -> {
+                        // Success: Safe to create the AR session.
+                        //mSession = Session(this)
+                    }
+                    ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
+                        // When this method returns `INSTALL_REQUESTED`:
+                        // 1. ARCore pauses this activity.
+                        // 2. ARCore prompts the user to install or update Google Play
+                        //    Services for AR (market://details?id=com.google.ar.core).
+                        // 3. ARCore downloads the latest device profile data.
+                        // 4. ARCore resumes this activity. The next invocation of
+                        //    requestInstall() will either return `INSTALLED` or throw an
+                        //    exception if the installation or update did not succeed.
+                        mUserRequestedInstall = false
+                        return
+                    }
+                }
+            }
+        } catch (e: UnavailableUserDeclinedInstallationException) {
+            // Display an appropriate message to the user and return gracefully.
+            Toast.makeText(this, "TODO: handle exception " + e, Toast.LENGTH_LONG)
+                .show()
+            return
+        } catch (e: Exception) {
+
+            return  // mSession remains null, since session creation has failed.
+        }
+
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mSession?.close()
     }
 
     override fun onPause() {
@@ -452,7 +688,67 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         orientationSeekbarJob.cancel()
         mHeadTracker!!.stopTracking()
         sensorManager?.unregisterListener(this);
+        mSession!!.pause()
+        closeCamera()
+        stopBackgroundThread();
     }
+
+    fun createSession() {
+        // Create a new ARCore session.
+        if (mSession == null) {
+            mSession = Session(this, EnumSet.of(Session.Feature.SHARED_CAMERA))
+
+            // Create a camera config filter for the session.
+            val filter = CameraConfigFilter(mSession)
+
+            // Return only camera configs that target 30 fps camera capture frame rate.
+            filter.targetFps = EnumSet.of(CameraConfig.TargetFps.TARGET_FPS_30)
+
+            // Return only camera configs that will not use the depth sensor.
+            filter.depthSensorUsage = EnumSet.of(CameraConfig.DepthSensorUsage.DO_NOT_USE)
+
+            // Get list of configs that match filter settings.
+            // In this case, this list is guaranteed to contain at least one element,
+            // because both TargetFps.TARGET_FPS_30 and DepthSensorUsage.DO_NOT_USE
+            // are supported on all ARCore supported devices.
+            val cameraConfigList = mSession!!.getSupportedCameraConfigs(filter)
+
+            // Use element 0 from the list of returned camera configs. This is because
+            // it contains the camera config that best matches the specified filter
+            // settings.
+            mSession!!.cameraConfig = cameraConfigList[0]
+
+            /*// Create a session config.
+            val config = Config(mSession)
+
+            // Do feature-specific operations here, such as enabling depth or turning on
+            // support for Augmented Faces.
+            config.setFocusMode(Config.FocusMode.AUTO);
+
+            // Configure the session.
+            mSession!!.configure(config)*/
+        }
+
+        // Store the ARCore shared camera reference.
+        sharedCamera = mSession!!.sharedCamera
+
+        // Store the ID of the camera that ARCore uses.
+        cameraId = mSession!!.cameraConfig.cameraId
+
+        // Use the currently configured CPU image size.
+        // Use the currently configured CPU image size.
+        val desiredCpuImageSize: Size = mSession!!.cameraConfig.imageSize
+        cpuImageReader = ImageReader.newInstance(
+            desiredCpuImageSize.width,
+            desiredCpuImageSize.height,
+            android.graphics.ImageFormat.YUV_420_888,
+            2
+        )
+        cpuImageReader!!.setOnImageAvailableListener(this, backgroundHandler)
+        // When ARCore is running, make sure it also updates our CPU image surface.
+        sharedCamera!!.setAppSurfaces(this.cameraId, listOf(cpuImageReader!!.surface));
+    }
+
 
     override fun getLastHeadView(): FloatArray {
         val floats1 = FloatArray(16)
@@ -515,5 +811,20 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     override fun onAccuracyChanged(p0: Sensor?, p1: Int) {
         //TODO("Not yet implemented")
+    }
+
+    var cpuImagesProcessed: Int = 0
+
+    override fun onImageAvailable(imageReader: ImageReader?) {
+        val image: Image? = imageReader?.acquireLatestImage()
+        if (image == null) {
+            Log.w(TAG, "onImageAvailable: Skipping null image.")
+            return
+        }
+
+        image.close()
+        cpuImagesProcessed++
+
+        // Reduce the screen update to once every two seconds with 30fps if running as automated test.
     }
 }

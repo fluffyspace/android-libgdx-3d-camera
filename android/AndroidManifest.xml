@@ -6,6 +6,14 @@ xmlns:tools="http://schemas.android.com/tools">
         android:glEsVersion="0x00020000"
         android:required="true" />
 
+
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Limits app visibility in the Google Play Store to ARCore supported devices
+         (https://developers.google.com/ar/devices). -->
+    <uses-feature android:name="android.hardware.camera.ar" />
+
+
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
@@ -66,5 +74,6 @@ xmlns:tools="http://schemas.android.com/tools">
             android:exported="false"
 
             />
+        <meta-data android:name="com.google.ar.core" android:value="required" />
     </application>
 </manifest>
