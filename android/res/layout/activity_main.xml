@@ -2,6 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:theme="@style/Theme.Material3.DayNight.NoActionBar">
 <LinearLayout
     android:orientation="vertical"
@@ -65,15 +66,13 @@
             android:padding="15dp"
             android:drawableLeft="@drawable/deployed_code_fill0_wght400_grad0_opsz24"/>
     </LinearLayout>
-    <TextView
-        android:id="@+id/no_objects"
+    <include
+        android:id="@+id/empty_data_parent"
+        layout="@layout/objects_empty_message"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="No objects in database."
-        android:textSize="15sp"
-        android:gravity="center"
-        android:layout_marginBottom="10dp"
-        android:visibility="gone"/>
+        android:visibility="gone"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
@@ -109,4 +108,5 @@
         android:drawableLeft="@drawable/map_fill0_wght400_grad0_opsz24"/>
 </LinearLayout>
 </LinearLayout>
+
 </ScrollView>

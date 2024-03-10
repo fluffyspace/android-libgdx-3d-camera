@@ -1,23 +1,11 @@
 package com.mygdx.game;
 
-import android.hardware.Camera;
+import com.mygdx.game.activities.AndroidLauncher;
 
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.List;
-import com.badlogic.gdx.files.FileHandle;
-import com.badlogic.gdx.graphics.Pixmap;
-
-import android.graphics.Bitmap;
-import android.graphics.Bitmap.CompressFormat;
 import android.util.Log;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewParent;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.FrameLayout;
-import android.widget.SeekBar;
 
 import androidx.camera.view.PreviewView;
 

@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
     <style name="AppTheme" parent="android:Theme.Holo.Light.NoActionBar.Fullscreen">
         <item name="android:windowBackground">@color/ic_background_color</item>
     </style>
+
     <style name="ShapeAppearanceOverlay.Avatar" parent="ShapeAppearance.MaterialComponents.SmallComponent">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">50%</item>
+    </style>
+
+    <style name="Widget.Theme.MyTheme.MyView" parent="">
+        <item name="android:background">@color/gray_400</item>
+        <item name="exampleColor">@color/light_blue_400</item>
     </style>
 
 </resources>

@@ -1,14 +1,13 @@
-package com.mygdx.game
+package com.mygdx.game.activities
 
 import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.provider.ContactsContract.Data
 import android.util.Log
-import android.view.View
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,7 +27,15 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
+import com.mygdx.game.AddCoordinateFragment
+import com.mygdx.game.AddOrEditObjectDialog
+import com.mygdx.game.CoordinateAddListener
+import com.mygdx.game.DatastoreRepository
+import com.mygdx.game.EmptyDataObserver
+import com.mygdx.game.ObjectAddEditListener
 import com.mygdx.game.ObjectAddEditListener.Companion.textToObject
+import com.mygdx.game.ObjectsAdapter
+import com.mygdx.game.R
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
 import com.mygdx.game.databinding.ActivityMainBinding
@@ -43,7 +50,8 @@ import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
 
-class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.ObjectClickListener {
+class MainActivity : AppCompatActivity(), CoordinateAddListener,
+    ObjectsAdapter.ObjectClickListener {
     lateinit var binding: ActivityMainBinding
     var fusedLocationClient: FusedLocationProviderClient? = null
 
@@ -105,7 +113,8 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.
             updateCoordinates(){ objekt ->
                 camera = objekt
                 updateEditTexts()
-                updateDataStore(
+                DatastoreRepository.updateDataStore(
+                    this,
                     cameraDataStoreKey,
                     Gson().toJson(objekt)
                 )
@@ -176,7 +185,8 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.
         val tmp = textToObject(binding.cameraCoordinatesEt.text.toString()) ?: return false
         camera = tmp
         updateEditTexts()
-        updateDataStore(
+        DatastoreRepository.updateDataStore(
+            this,
             cameraDataStoreKey,
             Gson().toJson(camera)
         )
@@ -202,11 +212,15 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.
 
                     binding.recyclerView.adapter = objectsAdapter
                     binding.recyclerView.layoutManager = LinearLayoutManager(this@MainActivity)
+
+                    // Here
+                    val emptyDataObserver = EmptyDataObserver(binding.recyclerView, binding.emptyDataParent.root)
+                    objectsAdapter!!.registerAdapterDataObserver(emptyDataObserver)
+
                 } else {
                     objectsAdapter!!.dataSet = objects
                     objectsAdapter!!.notifyDataSetChanged()
                 }
-                checkObjectsCount()
             }
         }
     }
@@ -271,40 +285,17 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.
         }
     }
 
-    fun checkObjectsCount(){
-        binding.noObjects.visibility = if(objects.isEmpty()) View.VISIBLE else View.GONE
-    }
-
     fun readFromDataStore() {
-        val cameraFlow: Flow<Objekt?> = dataStore.data.map{ prefs: Preferences ->
-            val objekt = prefs[cameraDataStoreKey] ?: ""
-            try {
-                Log.d("ingo", "dohvaćam ju mmmm $objekt")
-                Gson().fromJson(objekt, Objekt::class.java)
-            }catch (e: JsonSyntaxException){
-                Log.d("ingo", "nemoguće dohvatiti kameru")
-                null
-            }
-        }
-        lifecycleScope.launch(Dispatchers.IO) {
-            Log.d("ingo", "saće")
-            cameraFlow.first()?.let{
-                camera = it
-                Log.d("ingo", Gson().toJson(camera))
-                withContext(Dispatchers.Main){
-                    updateEditTexts()
-                }
+        DatastoreRepository.readFromDataStore(this){
+            camera = it
+            Log.d("ingo", Gson().toJson(camera))
+            lifecycleScope.launch(Dispatchers.Main){
+                updateEditTexts()
             }
         }
     }
 
-    fun updateDataStore(INTEGER_KEY: Preferences.Key<String>, value: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            dataStore.edit { settings ->
-                settings[INTEGER_KEY] = value
-            }
-        }
-    }
+
 
     override fun onResume() {
         super.onResume()
@@ -320,8 +311,6 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener, ObjectsAdapter.
     }
 
     companion object {
-
-        val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
         const val TAG = "CameraXApp"
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"

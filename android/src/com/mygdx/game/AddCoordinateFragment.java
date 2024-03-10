@@ -10,7 +10,7 @@ import androidx.fragment.app.DialogFragment;
 
 public class AddCoordinateFragment extends DialogFragment {
     CoordinateAddListener coordinateAddListener;
-    AddCoordinateFragment(CoordinateAddListener coordinateAddListener){
+    public AddCoordinateFragment(CoordinateAddListener coordinateAddListener){
         this.coordinateAddListener = coordinateAddListener;
     }
     @Override

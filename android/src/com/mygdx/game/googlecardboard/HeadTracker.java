@@ -41,7 +41,7 @@ public class HeadTracker
 	private Looper mSensorLooper;
 	private SensorEventListener mSensorEventListener;
 	private volatile boolean mTracking;
-	private final OrientationEKF mTracker = new OrientationEKF();
+	public final OrientationEKF mTracker = new OrientationEKF();
 	private long mLastGyroEventTimeNanos;
 
 	public HeadTracker(Context context)

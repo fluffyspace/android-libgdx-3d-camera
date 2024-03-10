@@ -1,8 +1,13 @@
-package com.mygdx.game
+package com.mygdx.game.activities
 
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -24,15 +29,25 @@ import androidx.room.Room
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.mygdx.game.AndroidDeviceCameraController
+import com.mygdx.game.MyGdxGame
+import com.mygdx.game.OnDrawFrame
+import com.mygdx.game.OrientationIndicator
+import com.mygdx.game.R
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.googlecardboard.HeadTracker
 import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.lang.StringBuilder
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
-class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
+class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventListener {
     private var mHeadTracker: HeadTracker? = null
     private var origWidth = 0
     private var origHeight = 0
@@ -40,12 +55,28 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
     var gson = Gson()
     lateinit var camHeight: TextView
     lateinit var fovTv: TextView
+    lateinit var compassResult: TextView
     lateinit var travelExplore: ImageView
+    lateinit var compassButton: ImageView
+    lateinit var calibrationNotification: TextView
+    //lateinit var seekbar_orientationekf: LinearProgressIndicator
+    lateinit var orientation_indicator: OrientationIndicator
+    lateinit var orientationSeekbarJob: Job
     lateinit var moveButton: ImageView
     lateinit var moveVerticalButton: ImageView
     lateinit var rotateButton: ImageView
     lateinit var scaleButton: ImageView
     var transformButtons: List<ImageView> = listOf()
+
+    var sensorManager: SensorManager? = null
+    private var accelerometer: Sensor? = null
+    private var magnetometer: Sensor? = null
+
+    private val accelerometerReading = FloatArray(3)
+    private val magnetometerReading = FloatArray(3)
+
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
 
     private val activityResultLauncher =
         registerForActivityResult(
@@ -74,6 +105,9 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
     lateinit var game: MyGdxGame
     lateinit var db: AppDatabase
 
+    var calibrationCounter = 0
+    var calibrationList = mutableListOf<Int>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mHeadTracker = HeadTracker(this)
@@ -92,7 +126,6 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         config.b = 8
         config.a = 8
         config.useGL30 = false
-
 
         val intent = intent
         val cameraIntentExtra = intent.getStringExtra("camera")
@@ -134,6 +167,32 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
             applicationContext,
             AppDatabase::class.java, "database-name"
         ).build()
+        orientationSeekbarJob = lifecycleScope.launch(Dispatchers.IO){
+            while(true) {
+                delay(50)
+                withContext(Dispatchers.Main) {
+                    //seekbar_orientationekf.progress = mHeadTracker?.mTracker?.headingDegrees?.toInt() ?: 0
+                    orientation_indicator.degrees = (mHeadTracker?.mTracker?.headingDegrees?.toFloat() ?: 0f) + game.worldRotation + game.worldRotationTmp
+                    orientation_indicator.invalidate()
+                }
+            }
+        }
+    }
+
+    fun startCalibration(){
+        calibrationCounter = 0
+        calibrationList.clear()
+
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+
+        if (accelerometer != null && magnetometer != null) {
+            sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
+            sensorManager?.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_NORMAL);
+        } else {
+            // Handle sensors not available
+        }
     }
 
     fun convertObjectColors(objekti: List<Objekt>){
@@ -145,6 +204,15 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
     fun initializeLayouts(){
         fovTv = this.fieldOfViewLayout.findViewById(R.id.fovValueTv)
         camHeight = this.fieldOfViewLayout.findViewById(R.id.cam_height)
+        calibrationNotification = this.fieldOfViewLayout.findViewById(R.id.calibration_notification)
+        //seekbar_orientationekf = this.fieldOfViewLayout.findViewById(R.id.seekbar_orientationekf)
+        orientation_indicator = this.fieldOfViewLayout.findViewById(R.id.orientation_indicator)
+        compassButton = this.fieldOfViewLayout.findViewById(R.id.compass)
+        compassButton.setOnClickListener {
+            calibrationNotification.visibility = View.VISIBLE
+            startCalibration()
+        }
+        compassResult = this.fieldOfViewLayout.findViewById(R.id.compass_result)
         travelExplore = this.fieldOfViewLayout.findViewById(R.id.no_distance)
         travelExplore.setOnClickListener {
             game.noDistance = !game.noDistance
@@ -379,10 +447,11 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
         mHeadTracker!!.startTracking()
     }
 
-
     override fun onPause() {
         super.onPause()
+        orientationSeekbarJob.cancel()
         mHeadTracker!!.stopTracking()
+        sensorManager?.unregisterListener(this);
     }
 
     override fun getLastHeadView(): FloatArray {
@@ -393,5 +462,58 @@ class AndroidLauncher() : AndroidApplicationOverrided(), OnDrawFrame {
 
     fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color{
         return com.badlogic.gdx.graphics.Color(color.red(), color.green(), color.blue(), color.alpha())
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor == accelerometer) {
+            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size);
+        } else if (event.sensor == magnetometer) {
+            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size);
+        }
+
+        updateOrientation();
+    }
+    private fun updateOrientation() {
+        calibrationCounter++
+        SensorManager.getRotationMatrix(
+            rotationMatrix,
+            null,
+            accelerometerReading,
+            magnetometerReading
+        )
+        SensorManager.getOrientation(rotationMatrix, orientationAngles)
+
+        // OrientationAngles[0] contains the azimuth (yaw) angle in radians.
+        // Convert radians to degrees
+        var azimuthInDegrees = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
+
+        // Ensure azimuthInDegrees is between 0 and 360
+        azimuthInDegrees = azimuthInDegrees//((azimuthInDegrees + 360) % 360)
+
+        if(calibrationCounter % 200 == 0) {
+            compassResult.text = azimuthInDegrees.toInt().toString()
+        }
+
+        if(calibrationCounter < 1000) return
+        //if(azimuthInDegrees < 0) azimuthInDegrees = 180+abs(azimuthInDegrees)
+        calibrationList.add(azimuthInDegrees.toInt())
+
+        println(azimuthInDegrees)
+        //
+
+        if(calibrationCounter > 5000){
+            calibrationNotification.visibility = View.GONE
+            val averageAzimuth = (calibrationList.sum()/calibrationList.size.toDouble())
+            mHeadTracker?.mTracker?.headingDegrees = averageAzimuth
+            println("Average azimuth: $averageAzimuth, $calibrationList")
+            sensorManager?.unregisterListener(this);
+            compassResult.text = StringBuilder(averageAzimuth.toInt().toString() + "\n+-" + (calibrationList.max() - calibrationList.min()).toString())
+        }
+        // Now azimuthInDegrees contains the heading (direction) value.
+        // Use it as needed.
+    }
+
+    override fun onAccuracyChanged(p0: Sensor?, p1: Int) {
+        //TODO("Not yet implemented")
     }
 }

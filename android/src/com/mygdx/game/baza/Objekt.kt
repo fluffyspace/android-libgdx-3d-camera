@@ -15,5 +15,5 @@ data class Objekt(
     var rotationX: Float = 0f,
     var rotationY: Float = 0f,
     var rotationZ: Float = 0f,
-    var color: Int = Color.GREEN,
+    var color: Int = Color.WHITE,
 )

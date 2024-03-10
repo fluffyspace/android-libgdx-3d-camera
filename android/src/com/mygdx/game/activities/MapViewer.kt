@@ -1,4 +1,4 @@
-package com.mygdx.game
+package com.mygdx.game.activities
 
 import android.app.ProgressDialog
 import android.graphics.drawable.Drawable
@@ -11,6 +11,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.google.gson.Gson
+import com.mygdx.game.AddOrEditObjectDialog
+import com.mygdx.game.DatastoreRepository
+import com.mygdx.game.DatastoreRepository.Companion.cameraDataStoreKey
+import com.mygdx.game.MarkerOverriden
+import com.mygdx.game.MyInfoWindow
+import com.mygdx.game.ObjectAddEditListener
+import com.mygdx.game.R
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
 import kotlinx.coroutines.Dispatchers
@@ -142,8 +149,6 @@ class MapViewer : AppCompatActivity(), AddOrEditObjectDialog.AddOrEditObjectDial
         }
     }
 
-
-
     inner class KmlLoader {
         val progressDialog = ProgressDialog(this@MapViewer);
         lateinit var mOverlay: ItemizedOverlayWithFocus<OverlayItem>
@@ -157,21 +162,22 @@ class MapViewer : AppCompatActivity(), AddOrEditObjectDialog.AddOrEditObjectDial
             kmlDocument.parseKMLStream(resources.openRawResource(R.raw.study_areas), null);
             val kmlOverlay = kmlDocument.mKmlRoot.buildOverlay(map, null, null, kmlDocument) as FolderOverlay;*/
 
-            val startPoint = GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
+            /*val startPoint = GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
             val startMarker = MarkerOverriden(map)
             startMarker.position = startPoint
-            startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)*/
 
             //your items
             //your items
             val items = ArrayList<OverlayItem>()
+            /*val startItem = OverlayItem(
+                "Title",
+                "Description",
+                GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
+            )
             items.add(
-                OverlayItem(
-                    "Title",
-                    "Description",
-                    GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
-                )
-            ) // Lat/Lon decimal degrees
+                startItem
+            ) // Lat/Lon decimal degrees*/
 
 
             //the overlay
@@ -213,12 +219,32 @@ class MapViewer : AppCompatActivity(), AddOrEditObjectDialog.AddOrEditObjectDial
                 override fun longPressHelper(geoPoint: GeoPoint): Boolean {
                     Toast.makeText(this@MapViewer,geoPoint?.latitude.toString() + ", "+geoPoint?.longitude.toString(),Toast.LENGTH_LONG).show();
                     Log.d("ingo", "novi marker")
+                    //startMarker.position = geoPoint
+                    mOverlay.removeItem(0)
+                    mOverlay.addItem(0, OverlayItem(
+                        "Title",
+                        "Description",
+                        geoPoint))
+                    map.invalidate()
+                    DatastoreRepository.updateDataStore(
+                        this@MapViewer,
+                        cameraDataStoreKey,
+                        Gson().toJson(Objekt(0,
+                            geoPoint.latitude.toFloat(), geoPoint.longitude.toFloat(), 0f))
+                    )
                     //addMarker(geoPoint)
                     return true
                 }
             }
             val mapEventsOverlay = MapEventsOverlay(mapEventsReceiver)
             map.overlays.add(0, mapEventsOverlay)
+
+            DatastoreRepository.readFromDataStore(this@MapViewer){
+                mOverlay.addItem(0, OverlayItem(
+                    "Title",
+                    "Description",
+                    GeoPoint(it.x.toDouble(), it.y.toDouble())))
+            }
         }
 
         fun addMarker(point: GeoPoint, name: String, id: String) {

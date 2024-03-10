@@ -74,7 +74,7 @@ class MyGdxGame (
     val xVector = Vector3(1f, 0f, 0f)
     var font: BitmapFont? = null
     var text: String? = null
-    var fontCaches: MutableList<BitmapFontCache?> = mutableListOf()
+    var fontCaches: MutableList<BitmapFontCache> = mutableListOf()
     var noRender: Boolean = false
     var noDistance: Boolean = false
 
@@ -142,6 +142,9 @@ class MyGdxGame (
         batch = SpriteBatch()
         updateCamera()
         createInstances()
+
+        val lala = translatePoint(Vector3(10f, 0f, 10f), Vector3(0f, 5f, 0f), 5f)
+        println("lala $lala")
     }
 
     val scalar = 10000f
@@ -180,6 +183,7 @@ class MyGdxGame (
     }
 
     fun generateModelForObject(color: Color): Model{
+        color.a = 0.4f
         return ModelBuilder().createBox(
             1f, 1f, 1f,
             Material(ColorAttribute.createDiffuse(color)),
@@ -256,6 +260,7 @@ class MyGdxGame (
         } else if(modelMovingVertical != 0f) {
             translatingVector = getObjectsXZAfterVerticalTranslation(objekt)
         } else {
+            println("not currently edited")
             translatingVector = Vector3(
                 objekt.diffX,
                 objekt.diffY,
@@ -267,7 +272,7 @@ class MyGdxGame (
         // Align the camera orientation with the normal vector using quaternions
 
         // Align the camera orientation with the normal vector using quaternions
-        val objEarthRot = alignCameraOrientation(normalVector)
+        //val objEarthRot = alignCameraOrientation(normalVector)
         //instances[index].transform.set(Matrix4())
         instances[index].transform.set(
             Matrix4().translate(translatingVector)
@@ -405,6 +410,8 @@ class MyGdxGame (
             }
         }
 
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         modelBatch!!.begin(cam)
         for(instance in instances) {
             modelBatch!!.render(instance, environment)
@@ -412,10 +419,14 @@ class MyGdxGame (
         modelBatch!!.end()
 
         batch!!.begin()
-        fontCaches.forEachIndexed {index, fontCache ->
-            if (objects[index].visible) {
-                fontCache?.draw(batch)
+        try {
+            fontCaches.forEachIndexed { index, fontCache ->
+                if (objects[index].visible) {
+                    fontCache.draw(batch)
+                }
             }
+        } catch (e: java.lang.ArrayIndexOutOfBoundsException){
+
         }
         batch!!.end()
     }
@@ -426,7 +437,6 @@ class MyGdxGame (
         return cam.frustum.sphereInFrustum(pos, objects[index].size)
     }
 
-
     fun usingKotlinStringFormat(input: Float, scale: Int) = "%.${scale}f".format(input)
 
     private fun showObjectsName(index: Int) {
@@ -436,7 +446,7 @@ class MyGdxGame (
         }*/
 
         makeTextForObject(index){ pos, rot ->
-            objekt.name + "\n" + "%.2f".format(distance3D(camTranslatingVector, pos)) + " m\n%.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
+            objekt.name + "\n" + "%.2f".format(distance3D(camTranslatingVector, pos)) + " m"//\n%.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
         }
     }
 
@@ -494,22 +504,26 @@ class MyGdxGame (
 
         var worldPosition: Vector3 = Vector3()
         var worldRotation: Quaternion = Quaternion()
-        model.transform.getTranslation(worldPosition)
+        worldPosition = Vector3(objects[index].diffX,objects[index].diffY,objects[index].diffZ)
+        //model.transform.getTranslation(worldPosition)
         model.transform.getRotation(worldRotation)
         val rotationInAngles = Vector3(worldRotation.yaw, worldRotation.roll, worldRotation.pitch)
 
-        fontCaches[index]?.setText(toText(worldPosition, rotationInAngles), screenPosition.x, screenPosition.y, 0f, Align.center, false);
+        try{
+            fontCaches[index].setText(toText(worldPosition, rotationInAngles), screenPosition.x, screenPosition.y, 0f, Align.center, false);
+        } catch (e: java.lang.ArrayIndexOutOfBoundsException){
+
+        }
         //this.text = toText(worldPosition)
     }
 
     fun getObjectsWithLimitedDistance(objekt: Objekt): Vector3{
-
-        var dist = distance3D(camTranslatingVector, Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
-        var substractedDistance = 0f
-        if(dist <= 50f) return Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
-        substractedDistance = -50 + dist
-
-        return translatePoint(Vector3(objekt.diffX, objekt.diffY, objekt.diffZ), camTranslatingVector, substractedDistance)
+        val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+        var dist = distance3D(camTranslatingVector, objektPos)
+        if(dist <= 50f) return objektPos
+        val subtractedDistance = -50 + dist
+        println("getObjectsWithLimitedDistance $objektPos $camTranslatingVector $subtractedDistance")
+        return translatePoint(objektPos, camTranslatingVector, subtractedDistance)
     }
 
     fun getObjectsXZAfterVerticalTranslation(objekt: Objekt): Vector3{

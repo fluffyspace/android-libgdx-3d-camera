@@ -15,6 +15,10 @@
  */
 package com.mygdx.game.googlecardboard;
 
+import static java.sql.DriverManager.println;
+
+import android.util.Log;
+
 public class OrientationEKF
 {
 	private static final float NS2S = 1.0E-09F;
@@ -35,7 +39,7 @@ public class OrientationEKF
 	private Vector3d mu = new Vector3d();
 	private Vector3d mx = new Vector3d();
 	private Vector3d down = new Vector3d();
-	private Vector3d north = new Vector3d();
+	Vector3d north = new Vector3d();
 	private long sensorTimeStampGyro;
 	private long sensorTimeStampAcc;
 	private long sensorTimeStampMag;
@@ -154,6 +158,7 @@ public class OrientationEKF
 	{
 		double currentHeading = getHeadingDegrees();
 		double deltaHeading = heading - currentHeading;
+		Log.d("ingo", "delta " + deltaHeading);
 		double s = Math.sin(deltaHeading / 180.0D * 3.141592653589793D);
 		double c = Math.cos(deltaHeading / 180.0D * 3.141592653589793D);
 
