@@ -19,7 +19,7 @@ class OpenGLCameraRenderer(var activity: AndroidLauncher) : GLSurfaceView.Render
         GLES20.glClearColor(0f, 0f, 0f, 1.0f);
         activity.backgroundRenderer.createOnGlThread(activity);
         activity.openCamera()
-        /*val textures = IntArray(1)
+        val textures = IntArray(1)
         GLES20.glGenTextures(1, textures, 0)
         cameraTextureId = textures[0]
 
@@ -30,11 +30,11 @@ class OpenGLCameraRenderer(var activity: AndroidLauncher) : GLSurfaceView.Render
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST)
-        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST)*/
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST)
     }
 
-    override fun onSurfaceChanged(p0: GL10?, p1: Int, p2: Int) {
-        //TODO("Not yet implemented")
+    override fun onSurfaceChanged(p0: GL10?, width: Int, height: Int) {
+        GLES20.glViewport(0, 0, width, height);
     }
 
     override fun onDrawFrame(gl: GL10?) {

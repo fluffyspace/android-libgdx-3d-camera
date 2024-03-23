@@ -150,7 +150,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     val backgroundRenderer: BackgroundRenderer = BackgroundRenderer()
 
-    private var cpuImageReader: ImageReader? = null
+    //private var cpuImageReader: ImageReader? = null
 
     // A check mechanism to ensure that the camera closed properly so that the app can safely exit.
     private val safeToExitApp = ConditionVariable()
@@ -296,7 +296,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             // Build a list of surfaces, starting with ARCore provided surfaces.
             val surfaceList: MutableList<Surface> = sharedCamera!!.arCoreSurfaces
 
-            surfaceList.add(cpuImageReader!!.surface);
+            //surfaceList.add(cpuImageReader!!.surface);
 
             // Add ARCore surfaces and CPU image surface targets.
             for (surface in surfaceList) {
@@ -333,7 +333,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             }
         }
     }
-
 
     val cameraSessionStateCallback = object : CameraCaptureSession.StateCallback() {
         // Called when ARCore first configures the camera capture session after
@@ -399,10 +398,10 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             cameraDevice!!.close()
             safeToExitApp.block()
         }
-        if (cpuImageReader != null) {
+        /*if (cpuImageReader != null) {
             cpuImageReader!!.close()
             cpuImageReader = null
-        }
+        }*/
     }
 
     fun maybeEnableArButton() {
@@ -694,40 +693,41 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     }
 
     fun createSession() {
+        Log.d("ingo", "happening")
         // Create a new ARCore session.
         if (mSession == null) {
             mSession = Session(this, EnumSet.of(Session.Feature.SHARED_CAMERA))
-
-            // Create a camera config filter for the session.
-            val filter = CameraConfigFilter(mSession)
-
-            // Return only camera configs that target 30 fps camera capture frame rate.
-            filter.targetFps = EnumSet.of(CameraConfig.TargetFps.TARGET_FPS_30)
-
-            // Return only camera configs that will not use the depth sensor.
-            filter.depthSensorUsage = EnumSet.of(CameraConfig.DepthSensorUsage.DO_NOT_USE)
-
-            // Get list of configs that match filter settings.
-            // In this case, this list is guaranteed to contain at least one element,
-            // because both TargetFps.TARGET_FPS_30 and DepthSensorUsage.DO_NOT_USE
-            // are supported on all ARCore supported devices.
-            val cameraConfigList = mSession!!.getSupportedCameraConfigs(filter)
-
-            // Use element 0 from the list of returned camera configs. This is because
-            // it contains the camera config that best matches the specified filter
-            // settings.
-            mSession!!.cameraConfig = cameraConfigList[0]
-
-            /*// Create a session config.
-            val config = Config(mSession)
-
-            // Do feature-specific operations here, such as enabling depth or turning on
-            // support for Augmented Faces.
-            config.setFocusMode(Config.FocusMode.AUTO);
-
-            // Configure the session.
-            mSession!!.configure(config)*/
         }
+
+        // Create a camera config filter for the session.
+        val filter = CameraConfigFilter(mSession)
+
+        // Return only camera configs that target 30 fps camera capture frame rate.
+        filter.targetFps = EnumSet.of(CameraConfig.TargetFps.TARGET_FPS_30)
+
+        // Return only camera configs that will not use the depth sensor.
+        filter.depthSensorUsage = EnumSet.of(CameraConfig.DepthSensorUsage.DO_NOT_USE)
+
+        // Get list of configs that match filter settings.
+        // In this case, this list is guaranteed to contain at least one element,
+        // because both TargetFps.TARGET_FPS_30 and DepthSensorUsage.DO_NOT_USE
+        // are supported on all ARCore supported devices.
+        val cameraConfigList = mSession!!.getSupportedCameraConfigs(filter)
+
+        // Use element 0 from the list of returned camera configs. This is because
+        // it contains the camera config that best matches the specified filter
+        // settings.
+        mSession!!.cameraConfig = cameraConfigList[0]
+
+        // Create a session config.
+        val config = Config(mSession)
+
+        // Do feature-specific operations here, such as enabling depth or turning on
+        // support for Augmented Faces.
+        config.setFocusMode(Config.FocusMode.AUTO);
+
+        // Configure the session.
+        mSession!!.configure(config)
 
         // Store the ARCore shared camera reference.
         sharedCamera = mSession!!.sharedCamera
@@ -737,16 +737,16 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
         // Use the currently configured CPU image size.
         // Use the currently configured CPU image size.
-        val desiredCpuImageSize: Size = mSession!!.cameraConfig.imageSize
+        /*val desiredCpuImageSize: Size = mSession!!.cameraConfig.imageSize
         cpuImageReader = ImageReader.newInstance(
             desiredCpuImageSize.width,
             desiredCpuImageSize.height,
             android.graphics.ImageFormat.YUV_420_888,
             2
         )
-        cpuImageReader!!.setOnImageAvailableListener(this, backgroundHandler)
+        cpuImageReader!!.setOnImageAvailableListener(this, backgroundHandler)*/
         // When ARCore is running, make sure it also updates our CPU image surface.
-        sharedCamera!!.setAppSurfaces(this.cameraId, listOf(cpuImageReader!!.surface));
+        //sharedCamera!!.setAppSurfaces(this.cameraId, listOf(cpuImageReader!!.surface));
     }
 
 

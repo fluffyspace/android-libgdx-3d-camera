@@ -17,8 +17,12 @@ class AndroidDeviceCameraController(private val activity: AndroidLauncher) : Dev
         if (previewView == null) {
             previewView = GLSurfaceView(activity)
             previewView!!.setEGLContextClientVersion(2) // OpenGL ES 2.0
+            previewView!!.preserveEGLContextOnPause = true;
+            previewView!!.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
             openGLCameraRenderer = OpenGLCameraRenderer(activity)
             previewView!!.setRenderer(openGLCameraRenderer)
+            previewView!!.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY;
+            previewView!!.onResume()
             previewView!!.id = R.id.previewview
             Log.d("ingo", "creating previewView")
         }
@@ -28,7 +32,7 @@ class AndroidDeviceCameraController(private val activity: AndroidLauncher) : Dev
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
         Log.d("ingo", "before " + frameLayout.childCount)
-        frameLayout.removeAllViews()
+        //frameLayout.removeAllViews()
         frameLayout.addView(previewView, 0)
         Log.d("ingo", "after " + frameLayout.childCount)
         for (index in 0 until frameLayout.childCount) {
