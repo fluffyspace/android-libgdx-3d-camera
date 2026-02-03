@@ -2,13 +2,12 @@ package com.mygdx.game.activities
 
 import android.graphics.Color
 import android.os.Bundle
-import android.os.StrictMode
-import android.preference.PreferenceManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
+import com.google.android.gms.maps.model.LatLng
 import com.google.gson.Gson
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
@@ -17,8 +16,6 @@ import com.mygdx.game.ui.screens.MapViewerScreen
 import com.mygdx.game.ui.theme.MyGdxGameTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.osmdroid.config.Configuration
-import org.osmdroid.util.GeoPoint
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -29,16 +26,10 @@ class MapViewer : ComponentActivity() {
     private lateinit var db: AppDatabase
 
     private var showAddDialog by mutableStateOf(false)
-    private var dialogGeoPoint by mutableStateOf<GeoPoint?>(null)
+    private var dialogLatLng by mutableStateOf<LatLng?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val policy: StrictMode.ThreadPolicy = StrictMode.ThreadPolicy.Builder().permitAll().build()
-        StrictMode.setThreadPolicy(policy)
-
-        val ctx = applicationContext
-        Configuration.getInstance().load(ctx, PreferenceManager.getDefaultSharedPreferences(ctx))
 
         val coordinatesString = intent.extras?.getString("coordinates")
         coordinates = Gson().fromJson(coordinatesString, Objekt::class.java)
@@ -53,8 +44,8 @@ class MapViewer : ComponentActivity() {
                 MapViewerScreen(
                     initialCoordinates = coordinates,
                     db = db,
-                    onAddObject = { geoPoint ->
-                        dialogGeoPoint = geoPoint
+                    onAddObject = { latLng ->
+                        dialogLatLng = latLng
                         showAddDialog = true
                     },
                     onDeleteObject = { objectId ->
@@ -65,13 +56,13 @@ class MapViewer : ComponentActivity() {
                     }
                 )
 
-                if (showAddDialog && dialogGeoPoint != null) {
+                if (showAddDialog && dialogLatLng != null) {
                     AddOrEditObjectDialog(
                         objectToEdit = null,
-                        initialCoordinates = "${dialogGeoPoint!!.latitude}, ${dialogGeoPoint!!.longitude}, 0.0",
+                        initialCoordinates = "${dialogLatLng!!.latitude}, ${dialogLatLng!!.longitude}, 0.0",
                         onDismiss = {
                             showAddDialog = false
-                            dialogGeoPoint = null
+                            dialogLatLng = null
                         },
                         onConfirm = { coordsText, name, colorText ->
                             val parts = coordsText.split(",").map { it.trim() }
@@ -100,7 +91,7 @@ class MapViewer : ComponentActivity() {
                                 }
                             }
                             showAddDialog = false
-                            dialogGeoPoint = null
+                            dialogLatLng = null
                         }
                     )
                 }
