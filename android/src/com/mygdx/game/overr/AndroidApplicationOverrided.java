@@ -19,7 +19,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 
-import androidx.appcompat.app.AppCompatActivity;
+import androidx.activity.ComponentActivity;
+import androidx.compose.ui.platform.ComposeView;
 
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.ApplicationListener;
@@ -54,7 +55,7 @@ import com.badlogic.gdx.utils.SnapshotArray;
 import com.mygdx.game.R;
 
 
-public class AndroidApplicationOverrided extends AppCompatActivity implements AndroidApplicationBase {
+public class AndroidApplicationOverrided extends ComponentActivity implements AndroidApplicationBase {
 
     protected AndroidGraphics graphics;
     protected AndroidInput input;
@@ -77,6 +78,7 @@ public class AndroidApplicationOverrided extends AppCompatActivity implements An
     private boolean isWaitingForAudio = false;
     public FrameLayout frameLayout;
     public View fieldOfViewLayout;
+    public ComposeView composeView;
 
     /** This method has to be called in the {@link Activity#onCreate(Bundle)} method. It sets up all the things necessary to get
      * input, render via OpenGL and so on. Uses a default {@link AndroidApplicationConfiguration}.
@@ -185,9 +187,16 @@ public class AndroidApplicationOverrided extends AppCompatActivity implements An
             graphics.getView().setId(R.id.graphicsview);
             frameLayout.addView(graphics.getView());
 
+            // Add ComposeView for Compose UI overlay
+            composeView = new ComposeView(this);
+            composeView.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            frameLayout.addView(composeView);
+
+            // Keep the XML layout for backwards compatibility during migration
             fieldOfViewLayout = getLayoutInflater().inflate(R.layout.field_of_view_layout, null);
             fieldOfViewLayout.setLayoutParams(new FrameLayout.LayoutParams( ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM ));
             fieldOfViewLayout.setId(R.id.seekbar);
+            fieldOfViewLayout.setVisibility(View.GONE); // Hide XML layout, use Compose instead
             frameLayout.addView(fieldOfViewLayout);
 
             setContentView(frameLayout, createLayoutParams());

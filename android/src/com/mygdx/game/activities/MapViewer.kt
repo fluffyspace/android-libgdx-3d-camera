@@ -1,293 +1,110 @@
 package com.mygdx.game.activities
 
-import android.app.ProgressDialog
-import android.graphics.drawable.Drawable
+import android.graphics.Color
 import android.os.Bundle
 import android.os.StrictMode
 import android.preference.PreferenceManager
 import android.util.Log
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.google.gson.Gson
-import com.mygdx.game.AddOrEditObjectDialog
-import com.mygdx.game.DatastoreRepository
-import com.mygdx.game.DatastoreRepository.Companion.cameraDataStoreKey
-import com.mygdx.game.MarkerOverriden
-import com.mygdx.game.MyInfoWindow
-import com.mygdx.game.ObjectAddEditListener
-import com.mygdx.game.R
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
+import com.mygdx.game.ui.dialogs.AddOrEditObjectDialog
+import com.mygdx.game.ui.screens.MapViewerScreen
+import com.mygdx.game.ui.theme.MyGdxGameTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.osmdroid.api.IMapController
 import org.osmdroid.config.Configuration
-import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.ItemizedIconOverlay
-import org.osmdroid.views.overlay.ItemizedOverlayWithFocus
-import org.osmdroid.views.overlay.MapEventsOverlay
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.OverlayItem
-import org.osmdroid.views.overlay.infowindow.InfoWindow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
+class MapViewer : ComponentActivity() {
 
-class MapViewer : AppCompatActivity(), AddOrEditObjectDialog.AddOrEditObjectDialogListener {
+    private lateinit var coordinates: Objekt
+    private lateinit var db: AppDatabase
 
-    lateinit var map: MapView
-    lateinit var mapController: IMapController
-    lateinit var listener: ObjectAddEditListener
-
-    private val TAG = "OsmActivity"
-    lateinit var kmlLoader: KmlLoader
-
-    private val PERMISSION_REQUEST_CODE = 1
-
-    lateinit var coordinates: Objekt
-    lateinit var db: AppDatabase
+    private var showAddDialog by mutableStateOf(false)
+    private var dialogGeoPoint by mutableStateOf<GeoPoint?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_map_viewer)
 
-        val policy: StrictMode.ThreadPolicy = StrictMode.ThreadPolicy.Builder().permitAll().build();
-        StrictMode.setThreadPolicy(policy);
+        val policy: StrictMode.ThreadPolicy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+        StrictMode.setThreadPolicy(policy)
 
-        val ctx = getApplicationContext();
-        Configuration.getInstance().load(ctx, PreferenceManager.getDefaultSharedPreferences(ctx));
+        val ctx = applicationContext
+        Configuration.getInstance().load(ctx, PreferenceManager.getDefaultSharedPreferences(ctx))
 
-        val coordinatesstring = intent.extras?.getString("coordinates")
-        coordinates = Gson().fromJson<Objekt>(coordinatesstring, Objekt::class.java)
-        map = findViewById<MapView>(R.id.mapView)
-        map.setTileSource(TileSourceFactory.MAPNIK)
-        map.setBuiltInZoomControls(true)
-        map.setMultiTouchControls(true)
-        mapController = map.controller
-        mapController.setZoom(15)
-        val startPoint = GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
-        mapController.setCenter(startPoint)
+        val coordinatesString = intent.extras?.getString("coordinates")
+        coordinates = Gson().fromJson(coordinatesString, Objekt::class.java)
+
         db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java, "database-name"
         ).build()
-        listener = ObjectAddEditListener({objekt ->
-            lifecycleScope.launch(Dispatchers.IO) {
-                Log.d("ingo", "dodan objekt")
-                db.objektDao().insertAll(objekt)
-                withContext(Dispatchers.Main) {
-                    kmlLoader.addMarker(GeoPoint(objekt.x.toDouble(), objekt.y.toDouble()), objekt.name, objekt.id.toString())
-                }
-            }
-        }, {objekt ->
-            lifecycleScope.launch(Dispatchers.IO) {
-                Log.d("ingo", "edited objekt")
-                db.objektDao().update(objekt)
 
-                /*val adapterItemIndex = objects.indexOfFirst { it.id == objekt.id }
-                objects[adapterItemIndex] = objekt
-                withContext(Dispatchers.Main) {
-                    objectsAdapter?.dataSet?.size?.let { size ->
-                        objectsAdapter?.notifyItemChanged(adapterItemIndex)
+        setContent {
+            MyGdxGameTheme {
+                MapViewerScreen(
+                    initialCoordinates = coordinates,
+                    db = db,
+                    onAddObject = { geoPoint ->
+                        dialogGeoPoint = geoPoint
+                        showAddDialog = true
+                    },
+                    onDeleteObject = { objectId ->
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            Log.d("ingo", "deleting object $objectId")
+                            db.objektDao().deleteById(objectId)
+                        }
                     }
-                }*/
-            }
-        })
-    }
+                )
 
-    override fun onResume() {
-        super.onResume()
-        //this will refresh the osmdroid configuration on resuming.
-        //if you make changes to the configuration, use
-        //SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        //Configuration.getInstance().load(this, PreferenceManager.getDefaultSharedPreferences(this));
-        map.onResume() //needed for compass, my location overlays, v6.0.0 and up
-        loadKml()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        //this will refresh the osmdroid configuration on resuming.
-        //if you make changes to the configuration, use
-        //SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        //Configuration.getInstance().save(this, prefs);
-        map.onPause() //needed for compass, my location overlays, v6.0.0 and up
-    }
-
-    fun loadKml() {
-        kmlLoader = KmlLoader()
-        kmlLoader.showProgressDialog()
-        lifecycleScope.launch(Dispatchers.IO) {
-            kmlLoader.doInBackground()
-            withContext(Dispatchers.Main){
-                kmlLoader.onPostExecute()
-                getObjectsFromDatabase(kmlLoader)
-            }
-        }
-    }
-
-    fun addObject(geoPoint: GeoPoint){
-        val addNewObjectDialog = AddOrEditObjectDialog(null)
-        addNewObjectDialog.setListener(listener)
-        addNewObjectDialog.setCoordinates(geoPoint)
-        addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
-    }
-
-    fun getObjectsFromDatabase(kmlLoader: KmlLoader) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val objektDao = db.objektDao()
-            val objects = objektDao.getAll().toMutableList()
-            withContext(Dispatchers.Main) {
-                for(objekt in objects) {
-                    kmlLoader.addMarker(GeoPoint(objekt.x.toDouble(), objekt.y.toDouble()), objekt.name, objekt.id.toString())
-                }
-            }
-        }
-    }
-
-    inner class KmlLoader {
-        val progressDialog = ProgressDialog(this@MapViewer);
-        lateinit var mOverlay: ItemizedOverlayWithFocus<OverlayItem>
-        fun showProgressDialog(){
-            progressDialog.setMessage("Loading Project...");
-            progressDialog.show();
-        }
-
-        fun doInBackground(){
-            /*kmlDocument = KmlDocument();
-            kmlDocument.parseKMLStream(resources.openRawResource(R.raw.study_areas), null);
-            val kmlOverlay = kmlDocument.mKmlRoot.buildOverlay(map, null, null, kmlDocument) as FolderOverlay;*/
-
-            /*val startPoint = GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
-            val startMarker = MarkerOverriden(map)
-            startMarker.position = startPoint
-            startMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)*/
-
-            //your items
-            //your items
-            val items = ArrayList<OverlayItem>()
-            /*val startItem = OverlayItem(
-                "Title",
-                "Description",
-                GeoPoint(coordinates.x.toDouble(), coordinates.y.toDouble())
-            )
-            items.add(
-                startItem
-            ) // Lat/Lon decimal degrees*/
-
-
-            //the overlay
-            mOverlay = ItemizedOverlayWithFocus(items,
-                    object : ItemizedIconOverlay.OnItemGestureListener<OverlayItem> {
-                        override fun onItemSingleTapUp(index: Int, item: OverlayItem): Boolean {
-                            //do something
-                            Toast.makeText(this@MapViewer, item.title, Toast.LENGTH_SHORT).show()
-                            //showMarkerInfoWindow(item)
-                            return true
-                        }
-
-                        override fun onItemLongPress(index: Int, item: OverlayItem): Boolean {
-                            //items.removeAt(index)
-                            mOverlay.removeItem(index)
-                            Toast.makeText(this@MapViewer,"Removed",Toast.LENGTH_LONG).show();
-                            lifecycleScope.launch(Dispatchers.IO) {
-                                Log.d("ingo", "dodan objekt")
-                                db.objektDao().deleteById(item.snippet.toInt())
+                if (showAddDialog && dialogGeoPoint != null) {
+                    AddOrEditObjectDialog(
+                        objectToEdit = null,
+                        initialCoordinates = "${dialogGeoPoint!!.latitude}, ${dialogGeoPoint!!.longitude}, 0.0",
+                        onDismiss = {
+                            showAddDialog = false
+                            dialogGeoPoint = null
+                        },
+                        onConfirm = { coordsText, name, colorText ->
+                            val parts = coordsText.split(",").map { it.trim() }
+                            if (parts.size == 3) {
+                                try {
+                                    val objekt = Objekt(
+                                        id = 0,
+                                        x = parts[0].toFloat(),
+                                        y = parts[1].toFloat(),
+                                        z = parts[2].toFloat(),
+                                        name = name,
+                                        color = if (colorText.isNotEmpty()) {
+                                            try {
+                                                Color.parseColor(colorText)
+                                            } catch (e: Exception) {
+                                                Color.WHITE
+                                            }
+                                        } else Color.WHITE
+                                    )
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        Log.d("ingo", "adding object")
+                                        db.objektDao().insertAll(objekt)
+                                    }
+                                } catch (e: NumberFormatException) {
+                                    // Invalid coordinates
+                                }
                             }
-                            map.invalidate()
-                            return true
+                            showAddDialog = false
+                            dialogGeoPoint = null
                         }
-                    }, this@MapViewer)
-            mOverlay.setFocusItemsOnTap(true)
-            map.overlays.add(mOverlay);
-
-            // Add a map events overlay to detect map long press
-            // Add a map events overlay to detect map long press
-            val mapEventsReceiver: MapEventsReceiver = object : MapEventsReceiver {
-                override fun singleTapConfirmedHelper(geoPoint: GeoPoint): Boolean {
-                    //Toast.makeText(this@MapViewer,geoPoint?.latitude.toString() + " - "+geoPoint?.longitude.toString(),Toast.LENGTH_LONG).show();
-                    addObject(geoPoint)
-                    //addMarker(geoPoint!!, "ha")
-                    //Toast.makeText(this@MapViewer, "Added", Toast.LENGTH_SHORT).show()
-                    return true
-                }
-
-                override fun longPressHelper(geoPoint: GeoPoint): Boolean {
-                    Toast.makeText(this@MapViewer,geoPoint?.latitude.toString() + ", "+geoPoint?.longitude.toString(),Toast.LENGTH_LONG).show();
-                    Log.d("ingo", "novi marker")
-                    //startMarker.position = geoPoint
-                    mOverlay.removeItem(0)
-                    mOverlay.addItem(0, OverlayItem(
-                        "Title",
-                        "Description",
-                        geoPoint))
-                    map.invalidate()
-                    DatastoreRepository.updateDataStore(
-                        this@MapViewer,
-                        cameraDataStoreKey,
-                        Gson().toJson(Objekt(0,
-                            geoPoint.latitude.toFloat(), geoPoint.longitude.toFloat(), 0f))
                     )
-                    //addMarker(geoPoint)
-                    return true
                 }
             }
-            val mapEventsOverlay = MapEventsOverlay(mapEventsReceiver)
-            map.overlays.add(0, mapEventsOverlay)
-
-            DatastoreRepository.readFromDataStore(this@MapViewer){
-                mOverlay.addItem(0, OverlayItem(
-                    "Title",
-                    "Description",
-                    GeoPoint(it.x.toDouble(), it.y.toDouble())))
-            }
-        }
-
-        fun addMarker(point: GeoPoint, name: String, id: String) {
-            // Create marker
-            val marker: Drawable = resources.getDrawable(R.drawable.deployed_code_fill0_wght400_grad0_opsz24) // Your marker icon
-            val overlayItem = OverlayItem(name, id, point)
-            overlayItem.setMarker(marker)
-
-
-            // Add marker to overlay
-            mOverlay.addItem(overlayItem)
-
-
-            // Refresh map view
-            map.invalidate()
-        }
-
-        fun onPostExecute(){
-            progressDialog.dismiss();
-            map.invalidate();
-        }
-
-        private fun showMarkerInfoWindow(item: OverlayItem) {
-            val infoWindow: InfoWindow = MyInfoWindow(R.layout.markerinfo, map, item)
-            val marker = Marker(map)
-            marker.position = GeoPoint(item.point.latitude, item.point.longitude)
-            map.overlayManager.add(marker)
-
-            infoWindow.open(marker, GeoPoint(item.point.latitude, item.point.longitude), 0, 0)
         }
     }
-
-    override fun onClickAddObject(coordinates: String, name: String, color: String) {
-
-    }
-
-    override fun onClickEditObject(
-        objekt: Objekt,
-        coordinates: String,
-        name: String,
-        color: String
-    ) {
-
-    }
-
 }

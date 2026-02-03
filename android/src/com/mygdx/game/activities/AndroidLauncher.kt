@@ -13,17 +13,14 @@ import android.os.Bundle
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.View
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
@@ -32,20 +29,18 @@ import com.google.gson.reflect.TypeToken
 import com.mygdx.game.AndroidDeviceCameraController
 import com.mygdx.game.MyGdxGame
 import com.mygdx.game.OnDrawFrame
-import com.mygdx.game.OrientationIndicator
-import com.mygdx.game.R
 import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.googlecardboard.HeadTracker
 import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
+import com.mygdx.game.ui.screens.AROverlayScreen
+import com.mygdx.game.ui.theme.MyGdxGameTheme
+import com.mygdx.game.viewmodel.ARViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.lang.StringBuilder
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventListener {
     private var mHeadTracker: HeadTracker? = null
@@ -53,20 +48,9 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     private var origHeight = 0
     var fov: Int = 34
     var gson = Gson()
-    lateinit var camHeight: TextView
-    lateinit var fovTv: TextView
-    lateinit var compassResult: TextView
-    lateinit var travelExplore: ImageView
-    lateinit var compassButton: ImageView
-    lateinit var calibrationNotification: TextView
-    //lateinit var seekbar_orientationekf: LinearProgressIndicator
-    lateinit var orientation_indicator: OrientationIndicator
-    lateinit var orientationSeekbarJob: Job
-    lateinit var moveButton: ImageView
-    lateinit var moveVerticalButton: ImageView
-    lateinit var rotateButton: ImageView
-    lateinit var scaleButton: ImageView
-    var transformButtons: List<ImageView> = listOf()
+
+    private lateinit var arViewModel: ARViewModel
+    private lateinit var orientationUpdateJob: Job
 
     var sensorManager: SensorManager? = null
     private var accelerometer: Sensor? = null
@@ -80,26 +64,25 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     private val activityResultLauncher =
         registerForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions())
-        { permissions ->
-            // Handle Permission granted/rejected
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
             var permissionGranted = true
             permissions.entries.forEach {
                 if (it.key in REQUIRED_PERMISSIONS && !it.value)
                     permissionGranted = false
             }
             if (!permissionGranted) {
-                Toast.makeText(baseContext,
+                Toast.makeText(
+                    baseContext,
                     "Permission request denied",
-                    Toast.LENGTH_SHORT).show()
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
                 startCamera()
             }
         }
 
     lateinit var cameraControl: AndroidDeviceCameraController
-    lateinit var editModeLayout: LinearLayout
-    lateinit var saveMenuLayout: LinearLayout
 
     lateinit var objects: MutableList<Objekt>
     lateinit var game: MyGdxGame
@@ -112,22 +95,19 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         super.onCreate(savedInstanceState)
         mHeadTracker = HeadTracker(this)
 
-        lateinit var config: AndroidApplicationConfiguration
-        config = AndroidApplicationConfiguration()
+        arViewModel = ViewModelProvider(this)[ARViewModel::class.java]
+
+        val config = AndroidApplicationConfiguration()
         config.useAccelerometer = false
         config.useCompass = false
         config.useGyroscope = false
         cameraControl = AndroidDeviceCameraController(this@AndroidLauncher)
-        //config.useGL30 = true;
-        // we need to change the default pixel format - since it does not include an alpha channel
-        // we need the alpha channel so the camera preview will be seen behind the GL scene
         config.r = 8
         config.g = 8
         config.b = 8
         config.a = 8
         config.useGL30 = false
 
-        val intent = intent
         val cameraIntentExtra = intent.getStringExtra("camera")
         val objectsIntentExtra = intent.getStringExtra("objects")
         objects = gson.fromJson(objectsIntentExtra, object : TypeToken<ArrayList<Objekt>>() {}.type)
@@ -138,25 +118,20 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             gson.fromJson(cameraIntentExtra, Objekt::class.java),
             objects,
             cameraControl,
-            fov, { editModeEnabled ->
-                lifecycleScope.launch {
-                    withContext(Dispatchers.Main){
-                        editModeLayout.visibility = if(editModeEnabled) View.VISIBLE else View.GONE
-                    }
+            fov,
+            { editModeEnabled ->
+                lifecycleScope.launch(Dispatchers.Main) {
+                    arViewModel.showEditMode(editModeEnabled)
                 }
             },
             { change ->
-                lifecycleScope.launch {
-                    withContext(Dispatchers.Main) {
-                        saveMenuLayout.visibility = if (change) View.VISIBLE else View.GONE
-                    }
+                lifecycleScope.launch(Dispatchers.Main) {
+                    arViewModel.showSaveMenu(change)
                 }
             },
             { pos ->
-                lifecycleScope.launch {
-                    withContext(Dispatchers.Main) {
-                        camHeight.text = "Camera: %.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
-                    }
+                lifecycleScope.launch(Dispatchers.Main) {
+                    arViewModel.updateCameraPosition(pos.x, pos.y, pos.z)
                 }
             }
         )
@@ -167,139 +142,121 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             applicationContext,
             AppDatabase::class.java, "database-name"
         ).build()
-        orientationSeekbarJob = lifecycleScope.launch(Dispatchers.IO){
-            while(true) {
+
+        orientationUpdateJob = lifecycleScope.launch(Dispatchers.IO) {
+            while (true) {
                 delay(50)
                 withContext(Dispatchers.Main) {
-                    //seekbar_orientationekf.progress = mHeadTracker?.mTracker?.headingDegrees?.toInt() ?: 0
-                    orientation_indicator.degrees = (mHeadTracker?.mTracker?.headingDegrees?.toFloat() ?: 0f) + game.worldRotation + game.worldRotationTmp
-                    orientation_indicator.invalidate()
+                    val degrees = (mHeadTracker?.mTracker?.headingDegrees?.toFloat()
+                        ?: 0f) + game.worldRotation + game.worldRotationTmp
+                    arViewModel.updateOrientationDegrees(degrees)
                 }
             }
         }
     }
 
-    fun startCalibration(){
+    fun startCalibration() {
         calibrationCounter = 0
         calibrationList.clear()
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
         if (accelerometer != null && magnetometer != null) {
-            sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-            sensorManager?.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_NORMAL);
-        } else {
-            // Handle sensors not available
+            sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+            sensorManager?.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_NORMAL)
         }
     }
 
-    fun convertObjectColors(objekti: List<Objekt>){
-        for(objekt in objekti){
+    fun convertObjectColors(objekti: List<Objekt>) {
+        for (objekt in objekti) {
             objekt.libgdxcolor = colorStringToLibgdxColor(Color.valueOf(objekt.color))
         }
     }
 
-    fun initializeLayouts(){
-        fovTv = this.fieldOfViewLayout.findViewById(R.id.fovValueTv)
-        camHeight = this.fieldOfViewLayout.findViewById(R.id.cam_height)
-        calibrationNotification = this.fieldOfViewLayout.findViewById(R.id.calibration_notification)
-        //seekbar_orientationekf = this.fieldOfViewLayout.findViewById(R.id.seekbar_orientationekf)
-        orientation_indicator = this.fieldOfViewLayout.findViewById(R.id.orientation_indicator)
-        compassButton = this.fieldOfViewLayout.findViewById(R.id.compass)
-        compassButton.setOnClickListener {
-            calibrationNotification.visibility = View.VISIBLE
-            startCalibration()
-        }
-        compassResult = this.fieldOfViewLayout.findViewById(R.id.compass_result)
-        travelExplore = this.fieldOfViewLayout.findViewById(R.id.no_distance)
-        travelExplore.setOnClickListener {
-            game.noDistance = !game.noDistance
-            game.noDistanceChanged()
-            it.setBackgroundColor(if(game.noDistance) Color.YELLOW else Color.WHITE)
-        }
-        this.fieldOfViewLayout.findViewById<TextView>(R.id.fovUp).setOnClickListener {
-            fov++
-            fovTv.text = "FOV: $fov"
-            game.fov = fov
-        }
-        this.fieldOfViewLayout.findViewById<TextView>(R.id.fovDown).setOnClickListener {
-            fov--
-            fovTv.text = "FOV: $fov"
-            game.fov = fov
-        }
-        fovTv.text = "FOV: $fov"
-        this.fieldOfViewLayout.findViewById<ImageView>(R.id.close).setOnClickListener {
-            finish()
-        }
-        saveMenuLayout = this.fieldOfViewLayout.findViewById<LinearLayout>(R.id.save_menu)
-        editModeLayout = this.fieldOfViewLayout.findViewById<LinearLayout>(R.id.edit_mode)
-        saveMenuLayout.visibility = View.GONE
-        editModeLayout.visibility = View.GONE
-        moveButton = editModeLayout.findViewById<ImageView>(R.id.move)
-        moveVerticalButton = editModeLayout.findViewById<ImageView>(R.id.move_up_down)
-        rotateButton = editModeLayout.findViewById<ImageView>(R.id.rotate)
-        scaleButton = editModeLayout.findViewById<ImageView>(R.id.scale)
-        transformButtons = listOf(moveButton, moveVerticalButton, rotateButton, scaleButton)
-        moveButton.setOnClickListener {
-            if(game.editMode == MyGdxGame.EditMode.move){
-                unselectTransformButtons()
-                return@setOnClickListener
+    fun initializeLayouts() {
+        // Setup ComposeView
+        composeView.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MyGdxGameTheme {
+                    AROverlayScreen(
+                        viewModel = arViewModel,
+                        onClose = { finish() },
+                        onFovUp = {
+                            fov++
+                            arViewModel.increaseFov()
+                            game.fov = fov
+                        },
+                        onFovDown = {
+                            fov--
+                            arViewModel.decreaseFov()
+                            game.fov = fov
+                        },
+                        onCompassClick = {
+                            arViewModel.showCalibration(true)
+                            startCalibration()
+                        },
+                        onNoDistanceClick = {
+                            val noDistance = arViewModel.toggleNoDistance()
+                            game.noDistance = noDistance
+                            game.noDistanceChanged()
+                        },
+                        onMoveClick = {
+                            if (game.editMode == MyGdxGame.EditMode.move) {
+                                game.editMode = null
+                                arViewModel.clearEditMode()
+                            } else {
+                                game.editMode = MyGdxGame.EditMode.move
+                                arViewModel.selectEditMode(ARViewModel.EditMode.MOVE)
+                            }
+                        },
+                        onMoveVerticalClick = {
+                            if (game.editMode == MyGdxGame.EditMode.move_vertical) {
+                                game.editMode = null
+                                arViewModel.clearEditMode()
+                            } else {
+                                game.editMode = MyGdxGame.EditMode.move_vertical
+                                arViewModel.selectEditMode(ARViewModel.EditMode.MOVE_VERTICAL)
+                            }
+                        },
+                        onRotateClick = {
+                            if (game.editMode == MyGdxGame.EditMode.rotate) {
+                                game.editMode = null
+                                arViewModel.clearEditMode()
+                            } else {
+                                game.editMode = MyGdxGame.EditMode.rotate
+                                arViewModel.selectEditMode(ARViewModel.EditMode.ROTATE)
+                            }
+                        },
+                        onScaleClick = {
+                            if (game.editMode == MyGdxGame.EditMode.scale) {
+                                game.editMode = null
+                                arViewModel.clearEditMode()
+                            } else {
+                                game.editMode = MyGdxGame.EditMode.scale
+                                arViewModel.selectEditMode(ARViewModel.EditMode.SCALE)
+                            }
+                        },
+                        onSaveClick = { saveChanges() },
+                        onDiscardClick = { discardChanges() }
+                    )
+                }
             }
-            game.editMode = MyGdxGame.EditMode.move
-            pickedTransformButton(it)
         }
-        moveVerticalButton.setOnClickListener {
-            if(game.editMode == MyGdxGame.EditMode.move_vertical){
-                unselectTransformButtons()
-                return@setOnClickListener
-            }
-            game.editMode = MyGdxGame.EditMode.move_vertical
-            pickedTransformButton(it)
-        }
-        rotateButton.setOnClickListener {
-            if(game.editMode == MyGdxGame.EditMode.rotate){
-                unselectTransformButtons()
-                return@setOnClickListener
-            }
-            game.editMode = MyGdxGame.EditMode.rotate
-            pickedTransformButton(it)
-        }
-        scaleButton.setOnClickListener {
-            if(game.editMode == MyGdxGame.EditMode.scale){
-                unselectTransformButtons()
-                return@setOnClickListener
-            }
-            game.editMode = MyGdxGame.EditMode.scale
-            pickedTransformButton(it)
-        }
-        saveMenuLayout.findViewById<ImageView>(R.id.save).setOnClickListener {
-            saveChanges()
-        }
-        saveMenuLayout.findViewById<ImageView>(R.id.discard_changes).setOnClickListener {
-            discardChanges()
-        }
-        if(this.frameLayout is FrameLayout){
-            Log.d("ingo", "framelayout")
-            Log.d("ingo", this.frameLayout.childCount.toString())
-        }
+
         if (graphics.view is SurfaceView) {
             Log.d("ingo", "is surface view")
             val glView = graphics.view as SurfaceView
-            // force alpha channel - I'm not sure we need this as the GL surface is already using alpha channel
             glView.setZOrderOnTop(true)
             glView.holder.setFormat(PixelFormat.TRANSLUCENT)
             glView.holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS)
-            //getHolder().setType(  );
         }
-        // we don't want the screen to turn off during the long image saving process
         graphics.view.keepScreenOn = true
-        // keep the original screen size
         origWidth = graphics.width
         origHeight = graphics.height
 
-        // Request camera permissions
         if (allPermissionsGranted()) {
             startCamera()
         } else {
@@ -307,62 +264,41 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         }
     }
 
-    fun discardChanges(){
+    fun discardChanges() {
         lifecycleScope.launch(Dispatchers.IO) {
-            /*val objektDao = db.objektDao()
-            val objekti = objektDao.getAll().toMutableList()
-
-            val tmpObjects = gson.fromJson<ArrayList<Objekt>>(gson.toJson(objekti), object : TypeToken<ArrayList<Objekt>>() {}.type)
-            convertObjectColors(tmpObjects)
-            game.noRender = true
-            delay(100)*/
-
-            withContext(Dispatchers.Main){
-                //objects = tmpObjects
+            withContext(Dispatchers.Main) {
                 game.updateObjectsCoordinates()
-                saveMenuLayout.visibility = View.GONE
+                arViewModel.showSaveMenu(false)
             }
             game.noRender = false
         }
     }
 
-    fun saveChanges(){
+    fun saveChanges() {
         lifecycleScope.launch(Dispatchers.IO) {
             val objektDao = db.objektDao()
 
-            for(objekt in game.objects){
-                if(objekt.changed){
+            for (objekt in game.objects) {
+                if (objekt.changed) {
                     objektDao.update(
                         com.mygdx.game.baza.Objekt(
                             objekt.id,
-                            (-(objekt.diffX/game.scalar)+game.camera.x),
-                            (-(objekt.diffZ/game.scalar)+game.camera.z),
-                            (-(objekt.diffY/game.scalar)+game.camera.y),
+                            (-(objekt.diffX / game.scalar) + game.camera.x),
+                            (-(objekt.diffZ / game.scalar) + game.camera.z),
+                            (-(objekt.diffY / game.scalar) + game.camera.y),
                             objekt.name,
                             objekt.size,
                             objekt.rotationX,
                             objekt.rotationY,
                             objekt.rotationZ,
-                            objekt.color)
+                            objekt.color
+                        )
                     )
                 }
             }
-            withContext(Dispatchers.Main){
-                saveMenuLayout.visibility = View.GONE
+            withContext(Dispatchers.Main) {
+                arViewModel.showSaveMenu(false)
             }
-        }
-    }
-
-    fun unselectTransformButtons(){
-        for(button in transformButtons){
-            button.setBackgroundColor(Color.WHITE)
-            game.editMode = null
-        }
-    }
-
-    fun pickedTransformButton(view: View){
-        for(button in transformButtons){
-            button.setBackgroundColor(if(view != button as View) Color.WHITE else Color.YELLOW)
         }
     }
 
@@ -372,9 +308,8 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     companion object {
         private const val TAG = "CameraXApp"
-        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private val REQUIRED_PERMISSIONS =
-            mutableListOf (
+            mutableListOf(
                 android.Manifest.permission.CAMERA,
                 android.Manifest.permission.RECORD_AUDIO
             ).apply {
@@ -385,18 +320,15 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
-        ContextCompat.checkSelfPermission(
-            baseContext, it) == PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
-            // Preview
             val preview = Preview.Builder()
                 .build()
                 .also {
@@ -404,18 +336,12 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                     it.setSurfaceProvider(cameraControl.previewView.surfaceProvider)
                 }
 
-            // Select back camera as a default
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
-                // Unbind use cases before rebinding
                 cameraProvider.unbindAll()
-
-                // Bind use cases to camera
-                cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview)
-
-            } catch(exc: Exception) {
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview)
+            } catch (exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
             }
 
@@ -449,9 +375,9 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     override fun onPause() {
         super.onPause()
-        orientationSeekbarJob.cancel()
+        orientationUpdateJob.cancel()
         mHeadTracker!!.stopTracking()
-        sensorManager?.unregisterListener(this);
+        sensorManager?.unregisterListener(this)
     }
 
     override fun getLastHeadView(): FloatArray {
@@ -460,19 +386,19 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         return floats1
     }
 
-    fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color{
+    fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color {
         return com.badlogic.gdx.graphics.Color(color.red(), color.green(), color.blue(), color.alpha())
     }
 
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor == accelerometer) {
-            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size);
+            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size)
         } else if (event.sensor == magnetometer) {
-            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size);
+            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size)
         }
-
-        updateOrientation();
+        updateOrientation()
     }
+
     private fun updateOrientation() {
         calibrationCounter++
         SensorManager.getRotationMatrix(
@@ -483,37 +409,30 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         )
         SensorManager.getOrientation(rotationMatrix, orientationAngles)
 
-        // OrientationAngles[0] contains the azimuth (yaw) angle in radians.
-        // Convert radians to degrees
         var azimuthInDegrees = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
 
-        // Ensure azimuthInDegrees is between 0 and 360
-        azimuthInDegrees = azimuthInDegrees//((azimuthInDegrees + 360) % 360)
-
-        if(calibrationCounter % 200 == 0) {
-            compassResult.text = azimuthInDegrees.toInt().toString()
+        if (calibrationCounter % 200 == 0) {
+            arViewModel.updateCompassResult(azimuthInDegrees.toInt().toString())
         }
 
-        if(calibrationCounter < 1000) return
-        //if(azimuthInDegrees < 0) azimuthInDegrees = 180+abs(azimuthInDegrees)
+        if (calibrationCounter < 1000) return
         calibrationList.add(azimuthInDegrees.toInt())
 
         println(azimuthInDegrees)
-        //
 
-        if(calibrationCounter > 5000){
-            calibrationNotification.visibility = View.GONE
-            val averageAzimuth = (calibrationList.sum()/calibrationList.size.toDouble())
+        if (calibrationCounter > 5000) {
+            arViewModel.showCalibration(false)
+            val averageAzimuth = (calibrationList.sum() / calibrationList.size.toDouble())
             mHeadTracker?.mTracker?.headingDegrees = averageAzimuth
             println("Average azimuth: $averageAzimuth, $calibrationList")
-            sensorManager?.unregisterListener(this);
-            compassResult.text = StringBuilder(averageAzimuth.toInt().toString() + "\n+-" + (calibrationList.max() - calibrationList.min()).toString())
+            sensorManager?.unregisterListener(this)
+            arViewModel.updateCompassResult(
+                "${averageAzimuth.toInt()}\n+-${calibrationList.max() - calibrationList.min()}"
+            )
         }
-        // Now azimuthInDegrees contains the heading (direction) value.
-        // Use it as needed.
     }
 
     override fun onAccuracyChanged(p0: Sensor?, p1: Int) {
-        //TODO("Not yet implemented")
+        // Not implemented
     }
 }

@@ -1,11 +1,12 @@
 plugins {
     id 'com.google.devtools.ksp'
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 apply plugin: 'org.jetbrains.kotlin.android'
 android {
     namespace "com.mygdx.game"
-    buildToolsVersion "34.0.0"
-    compileSdkVersion 34
+    buildToolsVersion "35.0.0"
+    compileSdk 35
     sourceSets {
         main {
             manifest.srcFile 'AndroidManifest.xml'
@@ -23,8 +24,8 @@ android {
     }
     defaultConfig {
         applicationId "com.mygdx.game"
-        minSdkVersion 26
-        targetSdkVersion 34
+        minSdk 26
+        targetSdk 35
         versionCode 1
         versionName "1.0"
     }
@@ -36,10 +37,14 @@ android {
     }
     buildFeatures {
         viewBinding true
+        compose true
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    kotlinOptions {
+        jvmTarget = "11"
     }
 }
 
@@ -100,14 +105,28 @@ tasks.register('run', Exec) {
 eclipse.project.name = appName + "-android"
 
 dependencies {
+    // Jetpack Compose
+    def composeBom = platform('androidx.compose:compose-bom:2024.12.01')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.activity:activity-compose:1.9.3'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.7'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7'
+    implementation 'androidx.constraintlayout:constraintlayout-compose:1.0.1'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+
     implementation 'com.google.android.gms:play-services-location:21.1.0'
-    implementation "androidx.datastore:datastore-preferences:1.0.0"
+    implementation "androidx.datastore:datastore-preferences:1.1.1"
 /*    // optional - RxJava2 support
     implementation "androidx.datastore:datastore-preferences-rxjava2:1.0.0"
 
     // optional - RxJava3 support
     implementation "androidx.datastore:datastore-preferences-rxjava3:1.0.0"*/
-    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
     def room_version = "2.6.1"

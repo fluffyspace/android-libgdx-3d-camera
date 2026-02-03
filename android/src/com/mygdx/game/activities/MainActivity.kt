@@ -1,69 +1,37 @@
 package com.mygdx.game.activities
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.ContactsContract.Data
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
-import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.DividerItemDecoration
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.room.Room
+import androidx.lifecycle.ViewModelProvider
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
-import com.google.gson.JsonSyntaxException
 import com.mygdx.game.AddCoordinateFragment
-import com.mygdx.game.AddOrEditObjectDialog
 import com.mygdx.game.CoordinateAddListener
-import com.mygdx.game.DatastoreRepository
-import com.mygdx.game.EmptyDataObserver
-import com.mygdx.game.ObjectAddEditListener
-import com.mygdx.game.ObjectAddEditListener.Companion.textToObject
-import com.mygdx.game.ObjectsAdapter
-import com.mygdx.game.R
-import com.mygdx.game.baza.AppDatabase
 import com.mygdx.game.baza.Objekt
-import com.mygdx.game.databinding.ActivityMainBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.mygdx.game.ui.screens.MainScreen
+import com.mygdx.game.ui.theme.MyGdxGameTheme
+import com.mygdx.game.viewmodel.MainViewModel
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
 
-class MainActivity : AppCompatActivity(), CoordinateAddListener,
-    ObjectsAdapter.ObjectClickListener {
-    lateinit var binding: ActivityMainBinding
-    var fusedLocationClient: FusedLocationProviderClient? = null
+class MainActivity : ComponentActivity(), CoordinateAddListener {
+    private var fusedLocationClient: FusedLocationProviderClient? = null
+    private lateinit var viewModel: MainViewModel
 
-    var camera: Objekt? = null
-    lateinit var objects: MutableList<Objekt>
-    var objectsAdapter: ObjectsAdapter? = null
-    val cameraDataStoreKey: Preferences.Key<String> = stringPreferencesKey("camera_coordinates")
-
-    lateinit var listener: ObjectAddEditListener
-
-    lateinit var db: AppDatabase
-    val locationPermissionRequest: ActivityResultLauncher<Array<String>> by lazy {
+    private val locationPermissionRequest: ActivityResultLauncher<Array<String>> by lazy {
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { result: Map<String, Boolean> ->
@@ -85,63 +53,14 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+
+        viewModel = ViewModelProvider(this)[MainViewModel::class.java]
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        binding.map.setOnClickListener {
-            updateCoordinates() { objekt ->
-                val intent = Intent(this@MainActivity, MapViewer::class.java)
-                intent.putExtra("coordinates", Gson().toJson(objekt))
-                startActivity(intent)
-            }
-        }
-        binding.openViewer.setOnClickListener {
-            Log.d("ingo", "open viewer")
-
-            val success = setFromET()
-            if(!success){
-                Toast.makeText(this, "Invalid coordinates.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val intent = Intent(this@MainActivity, AndroidLauncher::class.java)
-            intent.putExtra("camera", Gson().toJson(camera))
-            intent.putExtra("objects", Gson().toJson(objects))
-            startActivity(intent)
-        }
-        binding.cameraSetCoordinates.setOnClickListener {
-            updateCoordinates(){ objekt ->
-                camera = objekt
-                updateEditTexts()
-                DatastoreRepository.updateDataStore(
-                    this,
-                    cameraDataStoreKey,
-                    Gson().toJson(objekt)
-                )
-                Toast.makeText(
-                    this@MainActivity,
-                    "Lokacija postavljena.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }
-        camera = Objekt(0, 0f, 0f, 0f)
-        updateEditTexts()
-        binding.addObject.setOnClickListener {
-            val addNewObjectDialog = AddOrEditObjectDialog(null)
-            addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
-        }
-
-        db = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java, "database-name"
-        ).build()
 
         // Get text passed to app for adding new objects
-        val intent = intent
-        val action = intent.action
+        val intentAction = intent.action
         val type = intent.type
-        if (Intent.ACTION_SEND == action && type != null) {
+        if (Intent.ACTION_SEND == intentAction && type != null) {
             if ("text/plain" == type) {
                 val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
                 Log.d("ingo", sharedText!!)
@@ -149,85 +68,48 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                     val expandedURL1 = expandGoogleMapsUrl(sharedText)
                     Log.d("Expanded", "run: $expandedURL1")
                 }.start()
-                AddCoordinateFragment(this).show(supportFragmentManager, "GAME_DIALOG")
+                // Note: AddCoordinateFragment still uses supportFragmentManager
+                // This will need to be migrated or handled differently
             }
         }
-        readFromDataStore()
+
         hasLocationPermission()
 
-        listener = ObjectAddEditListener({objekt ->
-            lifecycleScope.launch(Dispatchers.IO) {
-                Log.d("ingo", "dodan objekt")
-                db.objektDao().insertAll(objekt)
-                objects.add(objekt)
-                withContext(Dispatchers.Main) {
-                    objectsAdapter?.dataSet?.size?.let { size ->
-                        objectsAdapter?.notifyItemInserted(size - 1)
+        setContent {
+            MyGdxGameTheme {
+                MainScreen(
+                    viewModel = viewModel,
+                    onOpenMap = { objekt ->
+                        val mapIntent = Intent(this@MainActivity, MapViewer::class.java)
+                        mapIntent.putExtra("coordinates", Gson().toJson(objekt))
+                        startActivity(mapIntent)
+                    },
+                    onOpenViewer = { camera, objects ->
+                        Log.d("ingo", "open viewer")
+                        val viewerIntent = Intent(this@MainActivity, AndroidLauncher::class.java)
+                        viewerIntent.putExtra("camera", Gson().toJson(camera))
+                        viewerIntent.putExtra("objects", Gson().toJson(objects))
+                        startActivity(viewerIntent)
+                    },
+                    onUpdateLocation = { callback ->
+                        updateCoordinates(callback)
+                    },
+                    onShowInvalidCoordinatesToast = {
+                        Toast.makeText(this, "Invalid coordinates.", Toast.LENGTH_SHORT).show()
                     }
-                }
-            }
-        }, {objekt ->
-            lifecycleScope.launch(Dispatchers.IO) {
-                Log.d("ingo", "edited objekt")
-                db.objektDao().update(objekt)
-                val adapterItemIndex = objects.indexOfFirst { it.id == objekt.id }
-                objects[adapterItemIndex] = objekt
-                withContext(Dispatchers.Main) {
-                    objectsAdapter?.dataSet?.size?.let { size ->
-                        objectsAdapter?.notifyItemChanged(adapterItemIndex)
-                    }
-                }
-            }
-        })
-    }
-
-    fun setFromET(): Boolean{
-        val tmp = textToObject(binding.cameraCoordinatesEt.text.toString()) ?: return false
-        camera = tmp
-        updateEditTexts()
-        DatastoreRepository.updateDataStore(
-            this,
-            cameraDataStoreKey,
-            Gson().toJson(camera)
-        )
-        return true
-    }
-
-    fun getObjectsFromDatabase(){
-        lifecycleScope.launch(Dispatchers.IO) {
-            val objektDao = db.objektDao()
-            objects = objektDao.getAll().toMutableList()
-            withContext(Dispatchers.Main){
-                if(objectsAdapter == null) {
-                    objectsAdapter = ObjectsAdapter(objects, this@MainActivity)
-
-                    val divider = DividerItemDecoration(
-                        binding.recyclerView.context, DividerItemDecoration.VERTICAL
-                    )
-                    divider.setDrawable(
-                        ContextCompat.getDrawable(baseContext, R.drawable.line_divider)!!
-                    )
-
-                    binding.recyclerView.addItemDecoration(divider)
-
-                    binding.recyclerView.adapter = objectsAdapter
-                    binding.recyclerView.layoutManager = LinearLayoutManager(this@MainActivity)
-
-                    // Here
-                    val emptyDataObserver = EmptyDataObserver(binding.recyclerView, binding.emptyDataParent.root)
-                    objectsAdapter!!.registerAdapterDataObserver(emptyDataObserver)
-
-                } else {
-                    objectsAdapter!!.dataSet = objects
-                    objectsAdapter!!.notifyDataSetChanged()
-                }
+                )
             }
         }
     }
 
 
 
-    fun hasLocationPermission(): Boolean{
+    override fun onResume() {
+        super.onResume()
+        viewModel.loadObjects()
+    }
+
+    private fun hasLocationPermission(): Boolean {
         if (ActivityCompat.checkSelfPermission(
                 this@MainActivity,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -247,7 +129,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         return true
     }
 
-    fun updateCoordinates(onLocationResult: (Objekt) -> Unit) {
+    private fun updateCoordinates(onLocationResult: (Objekt) -> Unit) {
         Log.d("ingo", "updateCoordinates")
         if (ActivityCompat.checkSelfPermission(
                 this@MainActivity,
@@ -260,14 +142,17 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
             Log.d("ingo", "has permission")
             fusedLocationClient!!.lastLocation
                 .addOnSuccessListener(this@MainActivity) { location ->
-                    // Got last known location. In some rare situations this can be null.
                     Log.d("ingo", "onSuccess")
                     if (location != null) {
                         Log.d("ingo", "not null")
-                        // Logic to handle location object
-                        onLocationResult(Objekt(0,
-                            location.latitude.toFloat(), location.longitude.toFloat(), 0f))
-
+                        onLocationResult(
+                            Objekt(
+                                0,
+                                location.latitude.toFloat(),
+                                location.longitude.toFloat(),
+                                0f
+                            )
+                        )
                     }
                 }.addOnFailureListener { e ->
                     Log.d("ingo", "onFailure")
@@ -276,46 +161,15 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
         }
     }
 
-    fun updateEditTexts() {
-        if (camera != null) {
-            Log.d("ingo", "camera coordinates da")
-            val text =
-                camera!!.x.toString() + ", " + camera!!.y + ", " + camera!!.z
-            binding.cameraCoordinatesEt.setText(text)
-        }
-    }
-
-    fun readFromDataStore() {
-        DatastoreRepository.readFromDataStore(this){
-            camera = it
-            Log.d("ingo", Gson().toJson(camera))
-            lifecycleScope.launch(Dispatchers.Main){
-                updateEditTexts()
-            }
-        }
-    }
-
-
-
-    override fun onResume() {
-        super.onResume()
-        getObjectsFromDatabase()
-    }
-
-    override fun onPause() {
-        super.onPause()
-    }
-
     override fun onCoordinatesPassed(isCamera: Boolean) {
-        //updateCoordinates(type)
+        // Legacy callback - no longer used with Compose
     }
 
     companion object {
-
         const val TAG = "CameraXApp"
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private val REQUIRED_PERMISSIONS =
-            mutableListOf (
+            mutableListOf(
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO
             ).apply {
@@ -323,6 +177,7 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                     add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 }
             }.toTypedArray()
+
         fun expandGoogleMapsUrl(url: String?): String {
             var s3 = ""
             try {
@@ -336,26 +191,6 @@ class MainActivity : AppCompatActivity(), CoordinateAddListener,
                 e.printStackTrace()
             }
             return s3
-        }
-    }
-
-
-
-    override fun onClickOnObject(objekt: Objekt) {
-        val addNewObjectDialog = AddOrEditObjectDialog(objekt)
-        addNewObjectDialog.setListener(listener)
-        addNewObjectDialog.show(supportFragmentManager, "AddNewObjectDialog")
-    }
-
-    override fun onLongClickOnObject(objekt: Objekt) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            db.objektDao().delete(objekt)
-            withContext(Dispatchers.Main){
-                objectsAdapter?.dataSet?.indexOf(objekt)?.let {index ->
-                    objectsAdapter?.notifyItemRemoved(index)
-                    objects.remove(objekt)
-                }
-            }
         }
     }
 }
