@@ -36,6 +36,10 @@ android {
             localProperties.load(new FileInputStream(localPropertiesFile))
         }
         manifestPlaceholders = [MAPS_API_KEY: localProperties.getProperty('MAPS_API_KEY', '')]
+        buildConfigField "String", "MAPS_API_KEY", "\"${localProperties.getProperty('MAPS_API_KEY', '')}\""
+    }
+    buildFeatures {
+        buildConfig true
     }
     buildTypes {
         release {

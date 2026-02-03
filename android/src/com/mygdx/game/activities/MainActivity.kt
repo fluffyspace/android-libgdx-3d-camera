@@ -11,6 +11,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ViewModelProvider
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -31,8 +34,29 @@ class MainActivity : ComponentActivity(), CoordinateAddListener {
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private lateinit var viewModel: MainViewModel
 
-    private val locationPermissionRequest: ActivityResultLauncher<Array<String>> by lazy {
-        registerForActivityResult(
+    // State for coordinate picking from map
+    private var pickedCoordinates by mutableStateOf<String?>(null)
+    private var pendingName by mutableStateOf<String?>(null)
+    private var pendingColor by mutableStateOf<String?>(null)
+
+    private lateinit var coordinatePickerLauncher: ActivityResultLauncher<Intent>
+    private lateinit var locationPermissionRequest: ActivityResultLauncher<Array<String>>
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Register activity result launchers before STARTED state
+        coordinatePickerLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val lat = result.data?.getDoubleExtra("latitude", 0.0) ?: 0.0
+                val lon = result.data?.getDoubleExtra("longitude", 0.0) ?: 0.0
+                pickedCoordinates = "$lat, $lon, 0.0"
+            }
+        }
+
+        locationPermissionRequest = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { result: Map<String, Boolean> ->
             val fineLocationGranted = result.getOrDefault(
@@ -49,10 +73,6 @@ class MainActivity : ComponentActivity(), CoordinateAddListener {
                 // No location access granted.
             }
         }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
 
         viewModel = ViewModelProvider(this)[MainViewModel::class.java]
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -96,6 +116,47 @@ class MainActivity : ComponentActivity(), CoordinateAddListener {
                     },
                     onShowInvalidCoordinatesToast = {
                         Toast.makeText(this, "Invalid coordinates.", Toast.LENGTH_SHORT).show()
+                    },
+                    onPickCoordinatesFromMap = { currentCoordinates, name, color ->
+                        pendingName = name
+                        pendingColor = color
+
+                        // Try to parse the current coordinates from the dialog
+                        val parts = currentCoordinates.split(",").map { it.trim() }
+                        val parsedLocation = if (parts.size >= 2) {
+                            try {
+                                val lat = parts[0].toFloat()
+                                val lon = parts[1].toFloat()
+                                val alt = parts.getOrNull(2)?.toFloatOrNull() ?: 0f
+                                Objekt(0, lat, lon, alt)
+                            } catch (e: NumberFormatException) {
+                                null
+                            }
+                        } else null
+
+                        if (parsedLocation != null) {
+                            // Use coordinates from the dialog
+                            val mapIntent = Intent(this@MainActivity, MapViewer::class.java)
+                            mapIntent.putExtra("coordinates", Gson().toJson(parsedLocation))
+                            mapIntent.putExtra("pickMode", true)
+                            coordinatePickerLauncher.launch(mapIntent)
+                        } else {
+                            // Fall back to current device location
+                            updateCoordinates { currentLocation ->
+                                val mapIntent = Intent(this@MainActivity, MapViewer::class.java)
+                                mapIntent.putExtra("coordinates", Gson().toJson(currentLocation))
+                                mapIntent.putExtra("pickMode", true)
+                                coordinatePickerLauncher.launch(mapIntent)
+                            }
+                        }
+                    },
+                    pickedCoordinates = pickedCoordinates,
+                    pendingName = pendingName,
+                    pendingColor = pendingColor,
+                    onClearPickedCoordinates = {
+                        pickedCoordinates = null
+                        pendingName = null
+                        pendingColor = null
                     }
                 )
             }

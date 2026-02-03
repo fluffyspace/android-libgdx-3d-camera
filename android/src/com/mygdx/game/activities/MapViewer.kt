@@ -1,5 +1,7 @@
 package com.mygdx.game.activities
 
+import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
@@ -33,6 +35,7 @@ class MapViewer : ComponentActivity() {
 
         val coordinatesString = intent.extras?.getString("coordinates")
         coordinates = Gson().fromJson(coordinatesString, Objekt::class.java)
+        val pickMode = intent.extras?.getBoolean("pickMode", false) ?: false
 
         db = Room.databaseBuilder(
             applicationContext,
@@ -45,15 +48,25 @@ class MapViewer : ComponentActivity() {
                     initialCoordinates = coordinates,
                     db = db,
                     onAddObject = { latLng ->
-                        dialogLatLng = latLng
-                        showAddDialog = true
+                        if (pickMode) {
+                            // Return the coordinates to the caller
+                            val resultIntent = Intent()
+                            resultIntent.putExtra("latitude", latLng.latitude)
+                            resultIntent.putExtra("longitude", latLng.longitude)
+                            setResult(Activity.RESULT_OK, resultIntent)
+                            finish()
+                        } else {
+                            dialogLatLng = latLng
+                            showAddDialog = true
+                        }
                     },
                     onDeleteObject = { objectId ->
                         lifecycleScope.launch(Dispatchers.IO) {
                             Log.d("ingo", "deleting object $objectId")
                             db.objektDao().deleteById(objectId)
                         }
-                    }
+                    },
+                    pickMode = pickMode
                 )
 
                 if (showAddDialog && dialogLatLng != null) {

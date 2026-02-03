@@ -149,7 +149,7 @@ class OrientationIndicator : View {
         textPaint.let {
             it.textSize = exampleDimension
             it.color = Color.WHITE//exampleColor
-            textWidth = it.measureText(exampleString)
+            textWidth = it.measureText(exampleString ?: "")
             textHeight = it.fontMetrics.bottom
         }
     }

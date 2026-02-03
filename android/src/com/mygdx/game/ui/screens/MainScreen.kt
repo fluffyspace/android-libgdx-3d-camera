@@ -49,7 +49,12 @@ fun MainScreen(
     onOpenMap: (Objekt) -> Unit,
     onOpenViewer: (camera: Objekt, objects: List<Objekt>) -> Unit,
     onUpdateLocation: ((Objekt) -> Unit) -> Unit,
-    onShowInvalidCoordinatesToast: () -> Unit
+    onShowInvalidCoordinatesToast: () -> Unit,
+    onPickCoordinatesFromMap: (currentCoordinates: String, pendingName: String, pendingColor: String) -> Unit = { _, _, _ -> },
+    pickedCoordinates: String? = null,
+    pendingName: String? = null,
+    pendingColor: String? = null,
+    onClearPickedCoordinates: () -> Unit = {}
 ) {
     val objects by viewModel.objects.collectAsState()
     val camera by viewModel.camera.collectAsState()
@@ -58,6 +63,12 @@ fun MainScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var objectToEdit by remember { mutableStateOf<Objekt?>(null) }
     var coordinatesInput by remember(cameraText) { mutableStateOf(cameraText) }
+
+    // Show dialog with picked coordinates when returning from map
+    var showDialogWithPickedCoords by remember { mutableStateOf(false) }
+    if (pickedCoordinates != null && !showDialogWithPickedCoords && !showAddDialog) {
+        showDialogWithPickedCoords = true
+    }
 
     Scaffold(
         topBar = {
@@ -190,6 +201,36 @@ fun MainScreen(
                     viewModel.addObject(it)
                 }
                 showAddDialog = false
+            },
+            onChooseFromMap = { currentCoordinates, currentName, currentColor ->
+                showAddDialog = false
+                onPickCoordinatesFromMap(currentCoordinates, currentName, currentColor)
+            }
+        )
+    }
+
+    // Dialog with coordinates picked from map
+    if (showDialogWithPickedCoords && pickedCoordinates != null) {
+        AddOrEditObjectDialog(
+            objectToEdit = null,
+            initialCoordinates = pickedCoordinates,
+            initialName = pendingName,
+            initialColor = pendingColor,
+            onDismiss = {
+                showDialogWithPickedCoords = false
+                onClearPickedCoordinates()
+            },
+            onConfirm = { coordinates, name, color ->
+                viewModel.createObjectFromInput(coordinates, name, color)?.let {
+                    viewModel.addObject(it)
+                }
+                showDialogWithPickedCoords = false
+                onClearPickedCoordinates()
+            },
+            onChooseFromMap = { currentCoordinates, currentName, currentColor ->
+                showDialogWithPickedCoords = false
+                onClearPickedCoordinates()
+                onPickCoordinatesFromMap(currentCoordinates, currentName, currentColor)
             }
         )
     }
