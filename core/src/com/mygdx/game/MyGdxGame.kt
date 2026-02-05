@@ -209,14 +209,16 @@ class MyGdxGame (
             )
 
             // Build view matrix:
-            // 1. worldRotation (user's compass correction) applied in world space
-            // 2. quat (device orientation from ARCore)
-            // 3. cameraEarthRot (earth curvature correction)
-            // 4. translate (camera position)
+            // Matrix chain order determines point transformation order (reverse).
+            // Points are transformed: quat(worldRot(earthRot(translate(p))))
+            // 1. translate (camera position)
+            // 2. cameraEarthRot (earth curvature correction)
+            // 3. worldRotation (user's compass correction) - applied in world-aligned frame
+            // 4. quat (device orientation from ARCore) - transforms to camera space
             view.set(
                 Matrix4()
-                    .rotate(upVector, worldRotation + worldRotationTmp)
                     .rotate(quat)
+                    .rotate(upVector, worldRotation + worldRotationTmp)
                     .rotate(cameraEarthRot)
                     .translate(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
             )
