@@ -3,16 +3,22 @@ package com.mygdx.game.ui.screens
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +61,8 @@ fun MapViewerScreen(
 
     var objects by remember { mutableStateOf<List<Objekt>>(emptyList()) }
     var cameraMarkerPosition by remember { mutableStateOf<LatLng?>(null) }
+    var selectedMapType by remember { mutableStateOf(MapType.NORMAL) }
+    var showLayerMenu by remember { mutableStateOf(false) }
 
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
@@ -81,7 +89,7 @@ fun MapViewerScreen(
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
-            properties = MapProperties(mapType = MapType.NORMAL),
+            properties = MapProperties(mapType = selectedMapType),
             uiSettings = MapUiSettings(
                 zoomControlsEnabled = true,
                 myLocationButtonEnabled = false
@@ -148,6 +156,52 @@ fun MapViewerScreen(
                                 }
                             }
                         }
+                    }
+                )
+            }
+        }
+
+        // Layer switcher button
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp)
+        ) {
+            SmallFloatingActionButton(
+                onClick = { showLayerMenu = true }
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Change map layer")
+            }
+            DropdownMenu(
+                expanded = showLayerMenu,
+                onDismissRequest = { showLayerMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Normal") },
+                    onClick = {
+                        selectedMapType = MapType.NORMAL
+                        showLayerMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Satellite") },
+                    onClick = {
+                        selectedMapType = MapType.SATELLITE
+                        showLayerMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Terrain") },
+                    onClick = {
+                        selectedMapType = MapType.TERRAIN
+                        showLayerMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Hybrid") },
+                    onClick = {
+                        selectedMapType = MapType.HYBRID
+                        showLayerMenu = false
                     }
                 )
             }

@@ -15,9 +15,6 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
@@ -29,8 +26,9 @@ import com.google.gson.reflect.TypeToken
 import com.mygdx.game.AndroidDeviceCameraController
 import com.mygdx.game.MyGdxGame
 import com.mygdx.game.OnDrawFrame
+import com.mygdx.game.arcore.ARCoreBackgroundRenderer
+import com.mygdx.game.arcore.ARCoreSessionManager
 import com.mygdx.game.baza.AppDatabase
-import com.mygdx.game.googlecardboard.HeadTracker
 import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
 import com.mygdx.game.ui.screens.AROverlayScreen
@@ -43,7 +41,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventListener {
-    private var mHeadTracker: HeadTracker? = null
+    // ARCore session manager (replaces HeadTracker)
+    private lateinit var arCoreSessionManager: ARCoreSessionManager
+    private lateinit var arCoreBackgroundRenderer: ARCoreBackgroundRenderer
+    private var arCoreInitialized = false
+
     private var origWidth = 0
     private var origHeight = 0
     var fov: Int = 34
@@ -78,7 +80,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                     Toast.LENGTH_SHORT
                 ).show()
             } else {
-                startCamera()
+                initializeARCore()
             }
         }
 
@@ -93,7 +95,10 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        mHeadTracker = HeadTracker(this)
+
+        // Initialize ARCore session manager (replaces HeadTracker)
+        arCoreSessionManager = ARCoreSessionManager(this)
+        arCoreBackgroundRenderer = ARCoreBackgroundRenderer()
 
         arViewModel = ViewModelProvider(this)[ARViewModel::class.java]
 
@@ -147,8 +152,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             while (true) {
                 delay(50)
                 withContext(Dispatchers.Main) {
-                    val degrees = (mHeadTracker?.mTracker?.headingDegrees?.toFloat()
-                        ?: 0f) + game.worldRotation + game.worldRotationTmp
+                    val degrees = arCoreSessionManager.headingDegrees.toFloat() + game.worldRotation + game.worldRotationTmp
                     arViewModel.updateOrientationDegrees(degrees)
                 }
             }
@@ -258,9 +262,61 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         origHeight = graphics.height
 
         if (allPermissionsGranted()) {
-            startCamera()
+            initializeARCore()
         } else {
             requestPermissions()
+        }
+    }
+
+    /**
+     * Initialize ARCore session and background renderer.
+     * This replaces the CameraX setup since ARCore handles the camera.
+     */
+    private fun initializeARCore() {
+        if (arCoreSessionManager.checkAvailability()) {
+            if (arCoreSessionManager.createSession()) {
+                Log.d(TAG, "ARCore session created successfully")
+                arCoreInitialized = true
+
+                // Set initial display geometry immediately
+                if (graphics.view is SurfaceView) {
+                    val glView = graphics.view as SurfaceView
+                    val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        display?.rotation ?: 0
+                    } else {
+                        @Suppress("DEPRECATION")
+                        windowManager.defaultDisplay.rotation
+                    }
+                    arCoreSessionManager.setDisplayGeometry(rotation, glView.width, glView.height)
+                }
+
+                // Set up surface callback to handle display geometry changes
+                if (graphics.view is SurfaceView) {
+                    val glView = graphics.view as SurfaceView
+                    glView.holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            // Initialization is now done lazily in getLastHeadView() on GL thread
+                        }
+
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                            @Suppress("DEPRECATION")
+                            val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                display?.rotation ?: 0
+                            } else {
+                                windowManager.defaultDisplay.rotation
+                            }
+                            arCoreSessionManager.setDisplayGeometry(rotation, width, height)
+                        }
+
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            // Cleanup handled in onDestroy
+                        }
+                    })
+                }
+            } else {
+                Log.e(TAG, "Failed to create ARCore session")
+                Toast.makeText(this, "ARCore initialization failed", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -323,30 +379,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    cameraControl.prepareCamera()
-                    it.setSurfaceProvider(cameraControl.previewView.surfaceProvider)
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview)
-            } catch (exc: Exception) {
-                Log.e(TAG, "Use case binding failed", exc)
-            }
-
-        }, ContextCompat.getMainExecutor(this))
-    }
 
     fun post(r: Runnable?) {
         handler.post(r!!)
@@ -370,20 +402,46 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
 
     override fun onResume() {
         super.onResume()
-        mHeadTracker!!.startTracking()
+
+        // Check ARCore availability and resume session
+        if (arCoreSessionManager.checkAvailability()) {
+            if (!arCoreInitialized) {
+                initializeARCore()
+            }
+            arCoreSessionManager.resume()
+        }
     }
 
     override fun onPause() {
         super.onPause()
         orientationUpdateJob.cancel()
-        mHeadTracker!!.stopTracking()
+        arCoreSessionManager.pause()
         sensorManager?.unregisterListener(this)
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        arCoreBackgroundRenderer.dispose()
+        arCoreSessionManager.close()
+    }
+
     override fun getLastHeadView(): FloatArray {
-        val floats1 = FloatArray(16)
-        mHeadTracker!!.getLastHeadView(floats1, 0)
-        return floats1
+        // Initialize ARCore background renderer on first call (on GL thread)
+        // This ensures OpenGL calls happen on the correct thread
+        if (!arCoreBackgroundRenderer.isInitialized && arCoreInitialized) {
+            arCoreBackgroundRenderer.initialize()
+            arCoreSessionManager.setCameraTextureName(arCoreBackgroundRenderer.textureId)
+        }
+
+        // Update ARCore session and get the view matrix
+        arCoreSessionManager.update()
+
+        // Draw ARCore camera background (this needs to be done on GL thread)
+        arCoreSessionManager.frame?.let { frame ->
+            arCoreBackgroundRenderer.draw(frame)
+        }
+
+        return arCoreSessionManager.getViewMatrix()
     }
 
     fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color {
@@ -423,7 +481,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         if (calibrationCounter > 5000) {
             arViewModel.showCalibration(false)
             val averageAzimuth = (calibrationList.sum() / calibrationList.size.toDouble())
-            mHeadTracker?.mTracker?.headingDegrees = averageAzimuth
+            arCoreSessionManager.headingDegrees = averageAzimuth
             println("Average azimuth: $averageAzimuth, $calibrationList")
             sensorManager?.unregisterListener(this)
             arViewModel.updateCompassResult(

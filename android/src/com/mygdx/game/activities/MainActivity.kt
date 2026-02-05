@@ -19,8 +19,6 @@ import androidx.lifecycle.ViewModelProvider
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
-import com.mygdx.game.AddCoordinateFragment
-import com.mygdx.game.CoordinateAddListener
 import com.mygdx.game.baza.Objekt
 import com.mygdx.game.ui.screens.MainScreen
 import com.mygdx.game.ui.theme.MyGdxGameTheme
@@ -30,7 +28,7 @@ import java.net.HttpURLConnection
 import java.net.MalformedURLException
 import java.net.URL
 
-class MainActivity : ComponentActivity(), CoordinateAddListener {
+class MainActivity : ComponentActivity() {
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private lateinit var viewModel: MainViewModel
 
@@ -88,8 +86,6 @@ class MainActivity : ComponentActivity(), CoordinateAddListener {
                     val expandedURL1 = expandGoogleMapsUrl(sharedText)
                     Log.d("Expanded", "run: $expandedURL1")
                 }.start()
-                // Note: AddCoordinateFragment still uses supportFragmentManager
-                // This will need to be migrated or handled differently
             }
         }
 
@@ -220,10 +216,6 @@ class MainActivity : ComponentActivity(), CoordinateAddListener {
                     e.printStackTrace()
                 }
         }
-    }
-
-    override fun onCoordinatesPassed(isCamera: Boolean) {
-        // Legacy callback - no longer used with Compose
     }
 
     companion object {

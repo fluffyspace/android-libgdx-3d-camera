@@ -22,25 +22,9 @@ public class AndroidDeviceCameraController implements DeviceCameraControl {
 
     @Override
     public synchronized void prepareCamera() {
-        //activity.setFixedSize(960,640);
-        if (previewView == null) {
-            previewView = new PreviewView(activity);
-            previewView.setId(R.id.previewview);
-            Log.d("ingo", "creating previewView");
-        }
-        FrameLayout frameLayout = activity.frameLayout;
-        previewView.setLayoutParams(new LayoutParams( LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT ));
-        Log.d("ingo", "before " + frameLayout.getChildCount());
-        frameLayout.addView(previewView, 0);
-
-        Log.d("ingo", "after " + frameLayout.getChildCount());
-        for(int index = 0; index < frameLayout.getChildCount(); index++) {
-            View nextChild = frameLayout.getChildAt(index);
-            Log.d("ingo", String.valueOf(nextChild.getId()));
-        }
-        Log.d("ingo", "previewview " + R.id.previewview + ", graphicsview " + R.id.graphicsview);
-        //activity.addContentView(previewView, new LayoutParams( LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT ) );
-        //previewView.setVisibility(View.INVISIBLE);
+        // ARCore now handles the camera background, so this is a no-op.
+        // The ARCoreBackgroundRenderer draws the camera feed directly as an OpenGL texture.
+        Log.d("ingo", "prepareCamera called - ARCore handles camera background");
     }
 
 }

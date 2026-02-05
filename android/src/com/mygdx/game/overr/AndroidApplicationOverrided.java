@@ -16,8 +16,6 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.SeekBar;
 
 import androidx.activity.ComponentActivity;
 import androidx.compose.ui.platform.ComposeView;
@@ -77,7 +75,6 @@ public class AndroidApplicationOverrided extends ComponentActivity implements An
     private int wasFocusChanged = -1;
     private boolean isWaitingForAudio = false;
     public FrameLayout frameLayout;
-    public View fieldOfViewLayout;
     public ComposeView composeView;
 
     /** This method has to be called in the {@link Activity#onCreate(Bundle)} method. It sets up all the things necessary to get
@@ -191,13 +188,6 @@ public class AndroidApplicationOverrided extends ComponentActivity implements An
             composeView = new ComposeView(this);
             composeView.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             frameLayout.addView(composeView);
-
-            // Keep the XML layout for backwards compatibility during migration
-            fieldOfViewLayout = getLayoutInflater().inflate(R.layout.field_of_view_layout, null);
-            fieldOfViewLayout.setLayoutParams(new FrameLayout.LayoutParams( ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM ));
-            fieldOfViewLayout.setId(R.id.seekbar);
-            fieldOfViewLayout.setVisibility(View.GONE); // Hide XML layout, use Compose instead
-            frameLayout.addView(fieldOfViewLayout);
 
             setContentView(frameLayout, createLayoutParams());
         }
