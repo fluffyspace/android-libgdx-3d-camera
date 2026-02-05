@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Android AR application that displays 3D objects overlaid on the device camera feed using LibGDX. Objects are positioned using real-world geographic coordinates (latitude, longitude, altitude) converted to Earth-Centered Earth-Fixed (ECEF) Cartesian coordinates for accurate placement in 3D space.
+Android AR application that displays 3D objects overlaid on the device camera feed using LibGDX. The app allows users to "see through walls" - objects placed at real-world geographic coordinates are rendered as if there were no obstacles between the user and the object. This enables visualization of where something is located even when not visible in the real world.
+
+Objects are positioned using real-world geographic coordinates (latitude, longitude, altitude) converted to Earth-Centered Earth-Fixed (ECEF) Cartesian coordinates for accurate placement in 3D space.
+
+### Touch Controls in AR View
+
+When no object is selected:
+- **Horizontal swipe**: Rotates the view left/right (manual compass correction if phone's orientation is inaccurate)
+
+Note: Physical distance to objects is determined solely by GPS coordinates. There is no gesture to change distance.
 
 ## Build Commands
 

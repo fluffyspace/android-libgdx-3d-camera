@@ -62,8 +62,6 @@ class MyGdxGame (
     var startTouch = MyPoint()
     var worldRotation = 0f
     var worldRotationTmp = 0f
-    var worldUpDownTmp = 0f
-    var worldUpDown = 0f
     var modelMoving: MyPolar? = null
     var modelMovingVertical: Float = 0f
     var modelRotatingY: Float = 0f
@@ -199,7 +197,8 @@ class MyGdxGame (
             val aspect: Float = viewportWidth / viewportHeight
             projection.setToProjection(abs(near), abs(far), fieldOfView, aspect)
 
-            val newCoordinate = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble() + worldUpDown + worldUpDownTmp)
+            // Camera position based on GPS coordinates only (no vertical slide adjustment)
+            val newCoordinate = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
             val cameraMoved = Vector3( newCoordinate.x-cameraCartesian.x, newCoordinate.z-cameraCartesian.z, newCoordinate.y-cameraCartesian.y)
 
             Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
@@ -209,14 +208,16 @@ class MyGdxGame (
                 cameraMoved.z
             )
 
-            //view.setToLookAt(position, cameraTmp.set(position).add(direction), up)
+            // Build view matrix:
+            // 1. worldRotation (user's compass correction) applied in world space
+            // 2. quat (device orientation from ARCore)
+            // 3. cameraEarthRot (earth curvature correction)
+            // 4. translate (camera position)
             view.set(
                 Matrix4()
-                    .rotate(quat)
                     .rotate(upVector, worldRotation + worldRotationTmp)
+                    .rotate(quat)
                     .rotate(cameraEarthRot)
-                    //.rotate(upVector, 180f)
-                    //.rotate(xVector, 180f)
                     .translate(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
             )
             combined.set(projection)
@@ -578,9 +579,8 @@ class MyGdxGame (
         }
         if(draggingHorizontal) {
             worldRotationTmp = -(Gdx.input.x - startTouch.x) / 10f
-        } else if(draggingVertical){
-            worldUpDownTmp = -(Gdx.input.y - startTouch.y) / 10f
         }
+        // Vertical slide disabled - distance is determined by GPS coordinates only
     }
 
     fun dragTresholdReached(): Boolean{
@@ -694,9 +694,6 @@ class MyGdxGame (
             if(worldRotationTmp != 0f) {
                 worldRotation += worldRotationTmp
                 worldRotationTmp = 0f
-            } else if(worldUpDownTmp != 0f){
-                worldUpDown += worldUpDownTmp
-                worldUpDownTmp = 0f
             } else if(selectedObject != -1 && modelMoving != null){
                 val myPoint = getObjectsXZAfterRot(objects[selectedObject])
                 objects[selectedObject].diffX = myPoint.x

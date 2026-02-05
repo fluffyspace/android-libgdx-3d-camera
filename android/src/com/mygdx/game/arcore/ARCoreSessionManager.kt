@@ -38,11 +38,6 @@ class ARCoreSessionManager(private val activity: Activity) {
     // View matrix from ARCore camera (16 floats)
     private val viewMatrix = FloatArray(16)
 
-    // Transformation matrix to match the old HeadTracker coordinate convention
-    // The old HeadTracker applied a -90 degree rotation around X axis
-    private val ekfToHeadTracker = FloatArray(16)
-    private val tempMatrix = FloatArray(16)
-
     // Heading offset for calibration (similar to OrientationEKF.headingDegrees)
     var headingDegrees: Double = 0.0
 
@@ -59,9 +54,7 @@ class ARCoreSessionManager(private val activity: Activity) {
         private set
 
     init {
-        // Initialize the same transform as HeadTracker used
-        @Suppress("DEPRECATION")
-        Matrix.setRotateEulerM(ekfToHeadTracker, 0, -90f, 0f, 0f)
+        Matrix.setIdentityM(viewMatrix, 0)
     }
 
     /**
@@ -189,22 +182,45 @@ class ARCoreSessionManager(private val activity: Activity) {
     }
 
     /**
-     * Get the camera view matrix from ARCore.
+     * Get the camera rotation matrix from ARCore (orientation only, no translation).
      * This replaces HeadTracker.getLastHeadView().
      *
-     * The matrix is transformed to match the coordinate convention
-     * used by the old HeadTracker (with the -90 degree X rotation).
+     * Uses ARCore's built-in getViewMatrix() which handles:
+     * - Display orientation
+     * - OpenGL coordinate conventions
+     * - Proper view matrix calculation (displayOrientedPose.inverse())
+     *
+     * We extract only the 3x3 rotation portion since the app handles translation
+     * via ECEF coordinates.
      */
     fun getViewMatrix(): FloatArray {
         val currentFrame = frame
 
         if (currentFrame != null && currentFrame.camera.trackingState == TrackingState.TRACKING) {
-            // Get ARCore's view matrix
-            currentFrame.camera.getViewMatrix(tempMatrix, 0)
+            // Use ARCore's built-in getViewMatrix which handles display orientation
+            val arCoreViewMatrix = FloatArray(16)
+            currentFrame.camera.getViewMatrix(arCoreViewMatrix, 0)
 
-            // Apply the same transform that HeadTracker used
-            // This ensures compatibility with existing coordinate system in MyGdxGame
-            Matrix.multiplyMM(viewMatrix, 0, tempMatrix, 0, ekfToHeadTracker, 0)
+            // Copy only the 3x3 rotation portion (no translation)
+            viewMatrix[0] = arCoreViewMatrix[0]
+            viewMatrix[1] = arCoreViewMatrix[1]
+            viewMatrix[2] = arCoreViewMatrix[2]
+            viewMatrix[3] = 0f
+
+            viewMatrix[4] = arCoreViewMatrix[4]
+            viewMatrix[5] = arCoreViewMatrix[5]
+            viewMatrix[6] = arCoreViewMatrix[6]
+            viewMatrix[7] = 0f
+
+            viewMatrix[8] = arCoreViewMatrix[8]
+            viewMatrix[9] = arCoreViewMatrix[9]
+            viewMatrix[10] = arCoreViewMatrix[10]
+            viewMatrix[11] = 0f
+
+            viewMatrix[12] = 0f
+            viewMatrix[13] = 0f
+            viewMatrix[14] = 0f
+            viewMatrix[15] = 1f
         } else {
             // Return identity if not tracking
             Matrix.setIdentityM(viewMatrix, 0)

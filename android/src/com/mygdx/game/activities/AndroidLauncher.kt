@@ -253,7 +253,8 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         if (graphics.view is SurfaceView) {
             Log.d("ingo", "is surface view")
             val glView = graphics.view as SurfaceView
-            glView.setZOrderOnTop(true)
+            // Don't use setZOrderOnTop - it would render GL on top of ComposeView buttons
+            // ARCore renders camera background within GL context, so transparency is not needed
             glView.holder.setFormat(PixelFormat.TRANSLUCENT)
             glView.holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS)
         }
