@@ -24,6 +24,7 @@ import com.badlogic.gdx.math.Intersector
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
+import com.badlogic.gdx.math.collision.BoundingBox
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ExtendViewport
 import com.mygdx.game.notbaza.Building
@@ -78,8 +79,13 @@ class MyGdxGame (
     var noDistance: Boolean = false
     var buildingInstances: MutableList<ModelInstance> = mutableListOf()
     var buildingModels: MutableList<Model> = mutableListOf()
+    var buildingData: MutableList<Building> = mutableListOf()
     private val buildingMeshGenerator = BuildingMeshGenerator()
     var buildingsVisible: Boolean = true
+    var selectedBuilding = -1
+    var onBuildingChange: ((Building) -> Unit)? = null
+    private var buildingHeightDragStart = 0f
+    private var buildingHeightOriginal = 0f
 
     data class MyPoint(var x: Float = 0f, var y: Float = 0f)
     data class MyPolar(var radius: Float = 0f, var degrees: Float = 0f)
@@ -94,7 +100,8 @@ class MyGdxGame (
         move,
         move_vertical,
         rotate,
-        scale
+        scale,
+        adjust_building_height
     }
 
     var editMode: EditMode? = null
@@ -162,20 +169,23 @@ class MyGdxGame (
             updateModel(instances.lastIndex)
         }
     }
-    fun setBuildings(buildings: List<Building>) {
+    fun setBuildings(newBuildings: List<Building>) {
         // Dispose old building models
         for (model in buildingModels) {
             model.dispose()
         }
         buildingModels.clear()
         buildingInstances.clear()
+        buildingData.clear()
+        selectedBuilding = -1
 
-        for (building in buildings) {
+        for (building in newBuildings) {
             try {
                 val model = buildingMeshGenerator.generate(building, cameraCartesian, ::geoToCartesian)
                 if (model != null) {
                     buildingModels.add(model)
                     buildingInstances.add(ModelInstance(model))
+                    buildingData.add(building)
                 }
             } catch (e: Exception) {
                 // Skip degenerate buildings
@@ -666,6 +676,22 @@ class MyGdxGame (
         modelMoving!!.degrees = -(Gdx.input.x - startTouch.x)/10f
     }
 
+    fun adjustBuildingHeight() {
+        if (!dragging) {
+            dragTresholdOnAxisCheck()
+            return
+        }
+        if (draggingVertical) {
+            val heightDelta = -(Gdx.input.y - startTouch.y) / 5f
+            val newHeight = (buildingHeightOriginal + heightDelta).coerceAtLeast(1f)
+            // Visual preview: scale Y axis of the building instance
+            val scale = newHeight / buildingHeightOriginal
+            buildingInstances[selectedBuilding].transform.set(
+                Matrix4().scale(1f, scale, 1f)
+            )
+        }
+    }
+
     fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {
         return sqrt((y2 - y1) * (y2 - y1) + (x2 - x1) * (x2 - x1))
     }
@@ -688,8 +714,13 @@ class MyGdxGame (
         if(!isUserTouching){
             startTouch = MyPoint(Gdx.input.x.toFloat(), Gdx.input.y.toFloat())
             isUserTouching = true
+            if (selectedBuilding != -1 && editMode == EditMode.adjust_building_height) {
+                buildingHeightOriginal = buildingData[selectedBuilding].heightMeters
+            }
         }
-        if(selectedObject != -1){
+        if(selectedBuilding != -1 && editMode == EditMode.adjust_building_height) {
+            adjustBuildingHeight()
+        } else if(selectedObject != -1){
             if(editMode == EditMode.move) {
                 moveObjectAround()
             } else if(editMode == EditMode.rotate){
@@ -710,7 +741,9 @@ class MyGdxGame (
         if(!dragging){ // a click
             System.out.println("Pokušavam uzeti objekt")
             val oldSelectedObject = selectedObject
+            val oldSelectedBuilding = selectedBuilding
             unselectObject()
+            unselectBuilding()
             if(!noDistance) {
                 val newObject = getObject(Gdx.input.x, Gdx.input.y)
                 selectedObject = if (newObject != oldSelectedObject) newObject else -1
@@ -720,10 +753,26 @@ class MyGdxGame (
                         instances[selectedObject] = ModelInstance(selectedModel)
                         updateModel(selectedObject)
                     }
+                } else {
+                    // Try selecting a building if no user object was hit
+                    val newBuilding = getBuildingAtRay(Gdx.input.x, Gdx.input.y)
+                    selectedBuilding = if (newBuilding != oldSelectedBuilding) newBuilding else -1
                 }
             }
-            toggleEditMode(selectedObject != -1)
+            toggleEditMode(selectedObject != -1 || selectedBuilding != -1)
         } else { // a drag
+            if (selectedBuilding != -1 && editMode == EditMode.adjust_building_height && draggingVertical) {
+                // Commit building height change
+                val heightDelta = -(Gdx.input.y - startTouch.y) / 5f
+                val newHeight = (buildingHeightOriginal + heightDelta).coerceAtLeast(1f)
+                buildingData[selectedBuilding] = buildingData[selectedBuilding].copy(heightMeters = newHeight)
+                regenerateBuildingMesh(selectedBuilding)
+                onBuildingChange?.invoke(buildingData[selectedBuilding])
+                dragging = false
+                draggingHorizontal = false
+                draggingVertical = false
+                return
+            }
             if(worldRotationTmp != 0f) {
                 worldRotation += worldRotationTmp
                 worldRotationTmp = 0f
@@ -795,6 +844,45 @@ class MyGdxGame (
         return -1
     }
 
+    private val tmpBoundingBox = BoundingBox()
+    fun getBuildingAtRay(screenX: Int, screenY: Int): Int {
+        val ray = cam!!.getPickRay(screenX.toFloat(), screenY.toFloat())
+        var closestDist = Float.MAX_VALUE
+        var closestIndex = -1
+        for (i in 0 until buildingInstances.size) {
+            val instance = buildingInstances[i]
+            instance.calculateBoundingBox(tmpBoundingBox)
+            val center = Vector3()
+            tmpBoundingBox.getCenter(center)
+            val dims = Vector3()
+            tmpBoundingBox.getDimensions(dims)
+            if (Intersector.intersectRayBounds(ray, tmpBoundingBox, null)) {
+                val dist = ray.origin.dst2(center)
+                if (dist < closestDist) {
+                    closestDist = dist
+                    closestIndex = i
+                }
+            }
+        }
+        return closestIndex
+    }
+
+    fun regenerateBuildingMesh(index: Int) {
+        if (index < 0 || index >= buildingData.size) return
+        val building = buildingData[index]
+        try {
+            val newModel = buildingMeshGenerator.generate(building, cameraCartesian, ::geoToCartesian) ?: return
+            buildingModels[index].dispose()
+            buildingModels[index] = newModel
+            buildingInstances[index] = ModelInstance(newModel)
+        } catch (e: Exception) {
+            // Skip if regeneration fails
+        }
+    }
+
+    fun unselectBuilding() {
+        selectedBuilding = -1
+    }
 
     override fun dispose() {
         batch!!.dispose()

@@ -35,8 +35,10 @@ class ARViewModel : ViewModel() {
     var selectedEditMode: EditMode? by mutableStateOf(null)
         private set
 
+    var buildingSelected by mutableStateOf(false)
+
     enum class EditMode {
-        MOVE, MOVE_VERTICAL, ROTATE, SCALE
+        MOVE, MOVE_VERTICAL, ROTATE, SCALE, ADJUST_HEIGHT
     }
 
     fun increaseFov() {

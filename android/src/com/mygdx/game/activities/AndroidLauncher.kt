@@ -19,7 +19,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import androidx.room.Room
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -30,6 +29,10 @@ import com.badlogic.gdx.Gdx
 import com.mygdx.game.arcore.ARCoreBackgroundRenderer
 import com.mygdx.game.arcore.ARCoreSessionManager
 import com.mygdx.game.baza.AppDatabase
+import com.mygdx.game.baza.UserBuilding
+import com.mygdx.game.baza.toBuilding
+import com.mygdx.game.baza.toPolygonJson
+import com.mygdx.game.notbaza.Building
 import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
 import com.mygdx.game.ui.screens.AROverlayScreen
@@ -129,6 +132,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
             fov,
             { editModeEnabled ->
                 lifecycleScope.launch(Dispatchers.Main) {
+                    arViewModel.buildingSelected = game.selectedBuilding != -1
                     arViewModel.showEditMode(editModeEnabled)
                 }
             },
@@ -146,29 +150,68 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         initialize(game, config)
         initializeLayouts()
 
-        // Fetch OSM building footprints asynchronously
+        db = AppDatabase.getInstance(applicationContext)
+
+        // Fetch OSM building footprints + user buildings, merge them
         val cameraObj = gson.fromJson(cameraIntentExtra, Objekt::class.java)
         val buildingCache = BuildingCache(applicationContext)
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val lat = cameraObj.x.toDouble()
                 val lon = cameraObj.y.toDouble()
-                val buildings = buildingCache.getCached(lat, lon)
+                val osmBuildings = buildingCache.getCached(lat, lon)
                     ?: OverpassClient.fetchBuildings(lat, lon).also {
                         buildingCache.putCache(lat, lon, it)
                     }
-                if (buildings.isNotEmpty()) {
-                    Gdx.app.postRunnable { game.setBuildings(buildings) }
+
+                // Load user buildings and filter out overridden OSM buildings
+                val userBuildingDao = db.userBuildingDao()
+                val userBuildings = userBuildingDao.getAll()
+                val overriddenOsmIds = userBuildingDao.getAllOsmIds().toSet()
+                val filteredOsm = osmBuildings.filter { it.id !in overriddenOsmIds }
+                val userConverted = userBuildings.map { it.toBuilding() }
+                val merged = userConverted + filteredOsm
+
+                if (merged.isNotEmpty()) {
+                    Gdx.app.postRunnable { game.setBuildings(merged) }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        db = Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java, "database-name"
-        ).build()
+        // Wire building change callback — save to Room when height adjusted in AR
+        game.onBuildingChange = { building ->
+            lifecycleScope.launch(Dispatchers.IO) {
+                val userBuildingDao = db.userBuildingDao()
+                val osmId = if (building.id > 0) building.id else null
+                if (osmId != null) {
+                    val existing = userBuildingDao.findByOsmId(osmId)
+                    if (existing != null) {
+                        userBuildingDao.update(existing.copy(
+                            heightMeters = building.heightMeters,
+                            polygonJson = building.toPolygonJson()
+                        ))
+                    } else {
+                        userBuildingDao.insert(UserBuilding(
+                            osmId = osmId,
+                            polygonJson = building.toPolygonJson(),
+                            heightMeters = building.heightMeters,
+                            minHeightMeters = building.minHeightMeters
+                        ))
+                    }
+                } else {
+                    // User-drawn building (negative id = -userBuildingId)
+                    val userBuildingId = (-building.id).toInt()
+                    val existing = userBuildingDao.findById(userBuildingId)
+                    if (existing != null) {
+                        userBuildingDao.update(existing.copy(
+                            heightMeters = building.heightMeters
+                        ))
+                    }
+                }
+            }
+        }
 
         orientationUpdateJob = lifecycleScope.launch(Dispatchers.IO) {
             while (true) {
@@ -263,6 +306,15 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                             } else {
                                 game.editMode = MyGdxGame.EditMode.scale
                                 arViewModel.selectEditMode(ARViewModel.EditMode.SCALE)
+                            }
+                        },
+                        onAdjustHeightClick = {
+                            if (game.editMode == MyGdxGame.EditMode.adjust_building_height) {
+                                game.editMode = null
+                                arViewModel.clearEditMode()
+                            } else {
+                                game.editMode = MyGdxGame.EditMode.adjust_building_height
+                                arViewModel.selectEditMode(ARViewModel.EditMode.ADJUST_HEIGHT)
                             }
                         },
                         onSaveClick = { saveChanges() },

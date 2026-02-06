@@ -46,6 +46,7 @@ fun AROverlayScreen(
     onMoveVerticalClick: () -> Unit,
     onRotateClick: () -> Unit,
     onScaleClick: () -> Unit,
+    onAdjustHeightClick: () -> Unit = {},
     onSaveClick: () -> Unit,
     onDiscardClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -213,29 +214,39 @@ fun AROverlayScreen(
             // Edit mode buttons
             AnimatedVisibility(visible = viewModel.editModeVisible) {
                 Row(modifier = Modifier.padding(start = 20.dp)) {
-                    EditModeButton(
-                        iconRes = R.drawable.in_plane_move,
-                        isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE,
-                        onClick = onMoveClick
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    EditModeButton(
-                        iconRes = R.drawable.altitude,
-                        isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE_VERTICAL,
-                        onClick = onMoveVerticalClick
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    EditModeButton(
-                        iconRes = R.drawable.rotate,
-                        isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.ROTATE,
-                        onClick = onRotateClick
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    EditModeButton(
-                        iconRes = R.drawable.scale,
-                        isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.SCALE,
-                        onClick = onScaleClick
-                    )
+                    if (viewModel.buildingSelected) {
+                        // Building selected — show only Adjust Height
+                        EditModeButton(
+                            iconRes = R.drawable.altitude,
+                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.ADJUST_HEIGHT,
+                            onClick = onAdjustHeightClick
+                        )
+                    } else {
+                        // User object selected — show Move/Rotate/Scale
+                        EditModeButton(
+                            iconRes = R.drawable.in_plane_move,
+                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE,
+                            onClick = onMoveClick
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        EditModeButton(
+                            iconRes = R.drawable.altitude,
+                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE_VERTICAL,
+                            onClick = onMoveVerticalClick
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        EditModeButton(
+                            iconRes = R.drawable.rotate,
+                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.ROTATE,
+                            onClick = onRotateClick
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        EditModeButton(
+                            iconRes = R.drawable.scale,
+                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.SCALE,
+                            onClick = onScaleClick
+                        )
+                    }
                 }
             }
 
