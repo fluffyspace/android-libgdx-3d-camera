@@ -26,6 +26,7 @@ import com.badlogic.gdx.math.Quaternion
 import com.badlogic.gdx.math.Vector3
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ExtendViewport
+import com.mygdx.game.notbaza.Building
 import com.mygdx.game.notbaza.Objekt
 import kotlin.math.abs
 import kotlin.math.acos
@@ -75,6 +76,10 @@ class MyGdxGame (
     var fontCaches: MutableList<BitmapFontCache> = mutableListOf()
     var noRender: Boolean = false
     var noDistance: Boolean = false
+    var buildingInstances: MutableList<ModelInstance> = mutableListOf()
+    var buildingModels: MutableList<Model> = mutableListOf()
+    private val buildingMeshGenerator = BuildingMeshGenerator()
+    var buildingsVisible: Boolean = true
 
     data class MyPoint(var x: Float = 0f, var y: Float = 0f)
     data class MyPolar(var radius: Float = 0f, var degrees: Float = 0f)
@@ -157,6 +162,27 @@ class MyGdxGame (
             updateModel(instances.lastIndex)
         }
     }
+    fun setBuildings(buildings: List<Building>) {
+        // Dispose old building models
+        for (model in buildingModels) {
+            model.dispose()
+        }
+        buildingModels.clear()
+        buildingInstances.clear()
+
+        for (building in buildings) {
+            try {
+                val model = buildingMeshGenerator.generate(building, cameraCartesian, ::geoToCartesian)
+                if (model != null) {
+                    buildingModels.add(model)
+                    buildingInstances.add(ModelInstance(model))
+                }
+            } catch (e: Exception) {
+                // Skip degenerate buildings
+            }
+        }
+    }
+
     lateinit var tmpObjectCartesian: Vector3
     fun updateObjectCoordinates(objekt: Objekt){
         tmpObjectCartesian = geoToCartesian(objekt.x.toDouble(), objekt.y.toDouble(), objekt.z.toDouble())
@@ -419,6 +445,11 @@ class MyGdxGame (
         modelBatch!!.begin(cam)
         for(instance in instances) {
             modelBatch!!.render(instance, environment)
+        }
+        if (buildingsVisible) {
+            for (instance in buildingInstances) {
+                modelBatch!!.render(instance, environment)
+            }
         }
         modelBatch!!.end()
 
@@ -771,6 +802,9 @@ class MyGdxGame (
         modelBatch!!.dispose()
         for(instance in instances){
             instance.model.dispose()
+        }
+        for(model in buildingModels){
+            model.dispose()
         }
     }
 

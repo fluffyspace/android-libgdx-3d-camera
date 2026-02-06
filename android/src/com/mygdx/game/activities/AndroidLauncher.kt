@@ -26,6 +26,7 @@ import com.google.gson.reflect.TypeToken
 import com.mygdx.game.AndroidDeviceCameraController
 import com.mygdx.game.MyGdxGame
 import com.mygdx.game.OnDrawFrame
+import com.badlogic.gdx.Gdx
 import com.mygdx.game.arcore.ARCoreBackgroundRenderer
 import com.mygdx.game.arcore.ARCoreSessionManager
 import com.mygdx.game.baza.AppDatabase
@@ -33,6 +34,8 @@ import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
 import com.mygdx.game.ui.screens.AROverlayScreen
 import com.mygdx.game.ui.theme.MyGdxGameTheme
+import com.mygdx.game.network.BuildingCache
+import com.mygdx.game.network.OverpassClient
 import com.mygdx.game.viewmodel.ARViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -142,6 +145,25 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         )
         initialize(game, config)
         initializeLayouts()
+
+        // Fetch OSM building footprints asynchronously
+        val cameraObj = gson.fromJson(cameraIntentExtra, Objekt::class.java)
+        val buildingCache = BuildingCache(applicationContext)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val lat = cameraObj.x.toDouble()
+                val lon = cameraObj.y.toDouble()
+                val buildings = buildingCache.getCached(lat, lon)
+                    ?: OverpassClient.fetchBuildings(lat, lon).also {
+                        buildingCache.putCache(lat, lon, it)
+                    }
+                if (buildings.isNotEmpty()) {
+                    Gdx.app.postRunnable { game.setBuildings(buildings) }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
 
         db = Room.databaseBuilder(
             applicationContext,
