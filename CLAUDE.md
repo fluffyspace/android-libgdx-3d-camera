@@ -43,7 +43,7 @@ MAPS_API_KEY=your_api_key_here
 ### Module Structure
 
 - **core** - Platform-independent LibGDX game logic and rendering interfaces
-- **android** - Android-specific implementation including UI (Jetpack Compose), sensors, camera, ARCore, and database
+- **android** - Android-specific implementation including UI (Jetpack Compose), ARCore, and database
 
 ### Key Components
 
@@ -54,26 +54,34 @@ MAPS_API_KEY=your_api_key_here
 - Receives orientation matrix from `OnDrawFrame.lastHeadView` interface
 
 **ARCore Integration (android/src/com/mygdx/game/arcore/)**
-- `ARCoreSessionManager` - Manages ARCore session lifecycle, provides camera view matrix for drift-free tracking (replaces legacy HeadTracker/OrientationEKF)
-- `ARCoreBackgroundRenderer` - Renders ARCore camera background
+- `ARCoreSessionManager` - Manages ARCore session lifecycle, provides camera view matrix for drift-free orientation tracking
+- `ARCoreBackgroundRenderer` - Renders ARCore camera background as OpenGL texture
+- Device orientation comes exclusively from ARCore; SensorManager is only used for manual compass calibration (TYPE_ACCELEROMETER + TYPE_MAGNETIC_FIELD) triggered via the compass button
+
+**Custom LibGDX Integration (android/src/com/mygdx/game/overr/)**
+- `AndroidApplicationOverrided` - Custom AndroidApplication subclass that AndroidLauncher extends for Compose integration
 
 **Android Activities (android/src/com/mygdx/game/activities/)**
 - `MainActivity` - Entry point with Jetpack Compose UI, manages object list
 - `AndroidLauncher` - LibGDX activity with ARCore integration and edit mode UI
 - `MapViewer` - Google Maps Compose for placing objects geographically
+- `MagnetExperiment` - Standalone activity for testing magnetometer/rotation sensors (debug tool)
 
 **UI Layer (android/src/com/mygdx/game/ui/)**
-- Jetpack Compose screens in `screens/` (MainScreen, MapViewerScreen, AROverlayScreen)
+- Jetpack Compose screens in `screens/` (MainScreen, MapViewerScreen, AROverlayScreen, MagnetExperimentScreen)
 - Dialogs in `dialogs/` (AddOrEditObjectDialog with place search)
 - Material 3 theming in `theme/`
+- `OrientationIndicator` - Custom View for compass overlay display
 
 **ViewModel Layer (android/src/com/mygdx/game/viewmodel/)**
 - `MainViewModel` - Manages object CRUD operations and camera state via StateFlow
 - `ARViewModel` - AR-specific state management
 
-**Data Models**
+**Data Layer**
 - `baza/Objekt` - Room entity for persistent storage (x=latitude, y=longitude, z=altitude)
+- `baza/Daovi` - DAO interface for database operations
 - `notbaza/Objekt` - Runtime model with computed Cartesian offsets (diffX/Y/Z) and LibGDX Color
+- `DatastoreRepository` - Camera position persistence via DataStore Preferences
 
 ### Coordinate System
 
@@ -92,4 +100,6 @@ Room database (`database-name`) with single `Objekt` table. Uses KSP for annotat
 - Jetpack Compose (BOM 2024.12.01) - UI
 - Room 2.6.1 - Local database
 - Google Maps Compose 4.3.0 - Map display
-- Google Play Services Location - GPS coordinates
+- Google Play Services Location 21.1.0 - GPS coordinates
+- DataStore Preferences 1.1.1 - Camera position persistence
+- Gson 2.10.1 - JSON serialization
