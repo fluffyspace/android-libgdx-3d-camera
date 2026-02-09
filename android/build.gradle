@@ -37,6 +37,7 @@ android {
         }
         manifestPlaceholders = [MAPS_API_KEY: localProperties.getProperty('MAPS_API_KEY', '')]
         buildConfigField "String", "MAPS_API_KEY", "\"${localProperties.getProperty('MAPS_API_KEY', '')}\""
+        buildConfigField "String", "OSM_CLIENT_ID", "\"${localProperties.getProperty('OSM_CLIENT_ID', '')}\""
     }
     buildFeatures {
         buildConfig true
@@ -172,4 +173,7 @@ dependencies {
 
     // ARCore
     implementation 'com.google.ar:core:1.44.0'
+
+    // Custom Tabs for OAuth
+    implementation 'androidx.browser:browser:1.8.0'
 }

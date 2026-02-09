@@ -14,8 +14,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -41,6 +44,7 @@ import com.mygdx.game.baza.Objekt
 import com.mygdx.game.ui.components.ObjectListItem
 import com.mygdx.game.ui.dialogs.AddOrEditObjectDialog
 import com.mygdx.game.ui.dialogs.OsmBuildingData
+import com.mygdx.game.ui.dialogs.OsmUploadDialog
 import com.mygdx.game.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,15 +59,25 @@ fun MainScreen(
     pickedCoordinates: String? = null,
     pendingName: String? = null,
     pendingColor: String? = null,
-    onClearPickedCoordinates: () -> Unit = {}
+    onClearPickedCoordinates: () -> Unit = {},
+    onOsmLogin: () -> Unit = {},
+    onOsmLogout: () -> Unit = {}
 ) {
     val objects by viewModel.objects.collectAsState()
     val camera by viewModel.camera.collectAsState()
     val cameraText by viewModel.cameraCoordinatesText.collectAsState()
+    val isOsmLoggedIn by viewModel.isOsmLoggedIn.collectAsState()
+    val osmDisplayName by viewModel.osmDisplayName.collectAsState()
+    val uploadableBuildings by viewModel.uploadableBuildings.collectAsState()
+    val uploadStates by viewModel.uploadStates.collectAsState()
+    val isUploading by viewModel.isUploading.collectAsState()
+    val uploadDone by viewModel.uploadDone.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var objectToEdit by remember { mutableStateOf<Objekt?>(null) }
     var coordinatesInput by remember(cameraText) { mutableStateOf(cameraText) }
+    var showOsmMenu by remember { mutableStateOf(false) }
+    var showUploadDialog by remember { mutableStateOf(false) }
 
     // Show dialog with picked coordinates when returning from map
     var showDialogWithPickedCoords by remember { mutableStateOf(false) }
@@ -74,7 +88,47 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AR Objects") }
+                title = { Text("AR Objects") },
+                actions = {
+                    Box {
+                        IconButton(onClick = {
+                            if (isOsmLoggedIn) {
+                                showOsmMenu = true
+                            } else {
+                                onOsmLogin()
+                            }
+                        }) {
+                            Icon(Icons.Default.Person, contentDescription = "OSM Account")
+                        }
+                        DropdownMenu(
+                            expanded = showOsmMenu,
+                            onDismissRequest = { showOsmMenu = false }
+                        ) {
+                            osmDisplayName?.let { name ->
+                                DropdownMenuItem(
+                                    text = { Text(name) },
+                                    onClick = { },
+                                    enabled = false
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Upload to OSM") },
+                                onClick = {
+                                    showOsmMenu = false
+                                    viewModel.loadUploadableBuildings()
+                                    showUploadDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Logout") },
+                                onClick = {
+                                    showOsmMenu = false
+                                    onOsmLogout()
+                                }
+                            )
+                        }
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -266,6 +320,20 @@ fun MainScreen(
                 }
                 objectToEdit = null
             }
+        )
+    }
+
+    // OSM Upload dialog
+    if (showUploadDialog) {
+        OsmUploadDialog(
+            buildings = uploadableBuildings,
+            uploadStates = uploadStates,
+            isUploading = isUploading,
+            uploadDone = uploadDone,
+            onUpload = { comment ->
+                viewModel.uploadToOsm(uploadableBuildings, comment)
+            },
+            onDismiss = { showUploadDialog = false }
         )
     }
 }

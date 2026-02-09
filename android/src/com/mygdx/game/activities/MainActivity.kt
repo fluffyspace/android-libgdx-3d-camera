@@ -3,6 +3,7 @@ package com.mygdx.game.activities
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -11,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -166,6 +168,14 @@ class MainActivity : ComponentActivity() {
                         pickedCoordinates = null
                         pendingName = null
                         pendingColor = null
+                    },
+                    onOsmLogin = {
+                        val authUrl = viewModel.osmAuthManager.buildAuthUrl()
+                        val customTabsIntent = CustomTabsIntent.Builder().build()
+                        customTabsIntent.launchUrl(this@MainActivity, Uri.parse(authUrl))
+                    },
+                    onOsmLogout = {
+                        viewModel.logoutFromOsm()
                     }
                 )
             }
@@ -177,6 +187,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.loadObjects()
+        viewModel.refreshOsmLoginState()
     }
 
     private fun hasLocationPermission(): Boolean {

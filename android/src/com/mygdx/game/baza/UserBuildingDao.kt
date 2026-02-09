@@ -27,4 +27,7 @@ interface UserBuildingDao {
 
     @Query("SELECT osmId FROM user_building WHERE osmId IS NOT NULL")
     fun getAllOsmIds(): List<Long>
+
+    @Query("SELECT * FROM user_building WHERE osmId IS NOT NULL")
+    fun getUploadable(): List<UserBuilding>
 }
