@@ -98,7 +98,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createObjectFromInput(coordinates: String, name: String, colorString: String): Objekt? {
+    fun createObjectFromInput(
+        coordinates: String,
+        name: String,
+        colorString: String,
+        osmId: Long? = null,
+        polygonJson: String? = null,
+        heightMeters: Float = 10f,
+        minHeightMeters: Float = 0f
+    ): Objekt? {
         return textToObject(coordinates)?.apply {
             this.name = name
             if (colorString.isNotEmpty()) {
@@ -108,6 +116,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Keep default color
                 }
             }
+            this.osmId = osmId
+            this.polygonJson = polygonJson
+            this.heightMeters = heightMeters
+            this.minHeightMeters = minHeightMeters
         }
     }
 

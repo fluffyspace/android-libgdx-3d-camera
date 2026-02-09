@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import java.lang.ref.WeakReference
 
 
-@Database(entities = [Objekt::class, UserBuilding::class], version = 2, exportSchema = true)
+@Database(entities = [Objekt::class, UserBuilding::class], version = 3, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun objektDao(): ObjektDao
@@ -38,6 +38,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE Objekt ADD COLUMN osmId INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE Objekt ADD COLUMN polygonJson TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE Objekt ADD COLUMN heightMeters REAL NOT NULL DEFAULT 10.0")
+                db.execSQL("ALTER TABLE Objekt ADD COLUMN minHeightMeters REAL NOT NULL DEFAULT 0.0")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return instance.get() ?: synchronized(this) {
                 instance.get() ?: buildDatabase(context).also { instance = WeakReference(it) }
@@ -52,7 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
         // https://medium.com/google-developers/7-pro-tips-for-room-fbadea4bfbd1#4785
         private fun buildDatabase(context: Context): AppDatabase {
             return Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
         }
     }

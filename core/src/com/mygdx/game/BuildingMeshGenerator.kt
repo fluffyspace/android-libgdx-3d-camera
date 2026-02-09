@@ -22,13 +22,15 @@ class BuildingMeshGenerator {
     fun generate(
         building: Building,
         cameraCartesian: Vector3,
-        geoToCartesian: (Double, Double, Double) -> Vector3
+        geoToCartesian: (Double, Double, Double) -> Vector3,
+        color: Color = Color(0.6f, 0.6f, 0.6f, 0.35f),
+        alpha: Float = color.a
     ): Model? {
         val polygon = building.polygon
         if (polygon.size < 3) return null
 
         return try {
-            generateMesh(building, cameraCartesian, geoToCartesian)
+            generateMesh(building, cameraCartesian, geoToCartesian, Color(color.r, color.g, color.b, alpha))
         } catch (e: Exception) {
             null
         }
@@ -37,7 +39,8 @@ class BuildingMeshGenerator {
     private fun generateMesh(
         building: Building,
         cameraCartesian: Vector3,
-        geoToCartesian: (Double, Double, Double) -> Vector3
+        geoToCartesian: (Double, Double, Double) -> Vector3,
+        color: Color = Color(0.6f, 0.6f, 0.6f, 0.35f)
     ): Model {
         val polygon = building.polygon
 
@@ -68,7 +71,7 @@ class BuildingMeshGenerator {
         }
 
         val material = Material(
-            ColorAttribute.createDiffuse(Color(0.6f, 0.6f, 0.6f, 0.35f)),
+            ColorAttribute.createDiffuse(color),
             BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         )
 

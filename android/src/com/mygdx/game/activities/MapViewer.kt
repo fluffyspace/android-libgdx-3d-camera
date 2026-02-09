@@ -126,7 +126,7 @@ class MapViewer : ComponentActivity() {
                             showAddDialog = false
                             dialogLatLng = null
                         },
-                        onConfirm = { coordsText, name, colorText ->
+                        onConfirm = { coordsText, name, colorText, osmData ->
                             val parts = coordsText.split(",").map { it.trim() }
                             if (parts.size == 3) {
                                 try {
@@ -142,7 +142,11 @@ class MapViewer : ComponentActivity() {
                                             } catch (e: Exception) {
                                                 Color.WHITE
                                             }
-                                        } else Color.WHITE
+                                        } else Color.WHITE,
+                                        osmId = osmData?.osmId,
+                                        polygonJson = osmData?.polygonJson,
+                                        heightMeters = osmData?.heightMeters ?: 10f,
+                                        minHeightMeters = osmData?.minHeightMeters ?: 0f
                                     )
                                     lifecycleScope.launch(Dispatchers.IO) {
                                         Log.d("ingo", "adding object")

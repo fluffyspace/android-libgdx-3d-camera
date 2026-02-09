@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,16 +47,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.mygdx.game.BuildConfig
 import com.mygdx.game.baza.Objekt
+import com.mygdx.game.network.OverpassClient
+import com.mygdx.game.notbaza.Building
+import com.mygdx.game.ui.components.BuildingPreviewRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+
+data class OsmBuildingData(
+    val osmId: Long,
+    val polygonJson: String,
+    val heightMeters: Float,
+    val minHeightMeters: Float,
+    val polygon: List<com.mygdx.game.notbaza.LatLon>
+)
 
 private data class GeocodingResponse(
     val results: List<GeocodingResult> = emptyList(),
@@ -99,6 +113,14 @@ private suspend fun searchPlaces(query: String): List<GeocodingResult> {
     }
 }
 
+private fun parseCoordinatesLatLon(coords: String): Pair<Double, Double>? {
+    val parts = coords.split(",").map { it.trim() }
+    if (parts.size != 3) return null
+    val lat = parts[0].toDoubleOrNull() ?: return null
+    val lon = parts[1].toDoubleOrNull() ?: return null
+    return lat to lon
+}
+
 @Composable
 fun AddOrEditObjectDialog(
     objectToEdit: Objekt?,
@@ -106,7 +128,7 @@ fun AddOrEditObjectDialog(
     initialName: String? = null,
     initialColor: String? = null,
     onDismiss: () -> Unit,
-    onConfirm: (coordinates: String, name: String, color: String) -> Unit,
+    onConfirm: (coordinates: String, name: String, color: String, osmData: OsmBuildingData?) -> Unit,
     onChooseFromMap: ((currentCoordinates: String, currentName: String, currentColor: String) -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -124,6 +146,41 @@ fun AddOrEditObjectDialog(
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<GeocodingResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+
+    // OSM building state
+    var osmBuildingData by remember { mutableStateOf<OsmBuildingData?>(null) }
+    var osmSearchStatus by remember { mutableStateOf("") }
+    var isSearchingOsm by remember { mutableStateOf(false) }
+    var lastSearchedCoords by remember { mutableStateOf("") }
+
+    // Auto-fetch OSM building when coordinates change
+    LaunchedEffect(coordinates) {
+        val parsed = parseCoordinatesLatLon(coordinates)
+        if (parsed != null && coordinates != lastSearchedCoords) {
+            lastSearchedCoords = coordinates
+            isSearchingOsm = true
+            osmSearchStatus = "Searching for building..."
+            osmBuildingData = null
+            try {
+                val building = OverpassClient.fetchBuildingAtPoint(parsed.first, parsed.second)
+                if (building != null) {
+                    osmBuildingData = OsmBuildingData(
+                        osmId = building.id,
+                        polygonJson = Gson().toJson(building.polygon),
+                        heightMeters = building.heightMeters,
+                        minHeightMeters = building.minHeightMeters,
+                        polygon = building.polygon
+                    )
+                    osmSearchStatus = "Building found (OSM #${building.id})"
+                } else {
+                    osmSearchStatus = "No building found (will use cube)"
+                }
+            } catch (_: Exception) {
+                osmSearchStatus = "OSM lookup failed (will use cube)"
+            }
+            isSearchingOsm = false
+        }
+    }
 
     // Convert existing color to hue, or use initial color, or default to 0 (red)
     var hue by remember {
@@ -263,6 +320,57 @@ fun AddOrEditObjectDialog(
                         }
                     }
                 }
+
+                // OSM building status
+                if (osmSearchStatus.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isSearchingOsm) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = osmSearchStatus,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 12.sp,
+                            color = if (osmBuildingData != null)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // 3D building preview
+                if (osmBuildingData != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val hsv = floatArrayOf(hue, 1f, 1f)
+                    val colorInt = AndroidColor.HSVToColor(hsv)
+                    val pR = android.graphics.Color.red(colorInt) / 255f
+                    val pG = android.graphics.Color.green(colorInt) / 255f
+                    val pB = android.graphics.Color.blue(colorInt) / 255f
+                    AndroidView(
+                        factory = { ctx ->
+                            BuildingPreviewRenderer(
+                                context = ctx,
+                                polygon = osmBuildingData!!.polygon,
+                                heightMeters = osmBuildingData!!.heightMeters,
+                                minHeightMeters = osmBuildingData!!.minHeightMeters,
+                                colorR = pR,
+                                colorG = pG,
+                                colorB = pB
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = name,
@@ -310,7 +418,7 @@ fun AddOrEditObjectDialog(
                     if (parts.size == 3) {
                         val colorInt = AndroidColor.HSVToColor(floatArrayOf(hue, 1f, 1f))
                         val colorHex = String.format("#%06X", 0xFFFFFF and colorInt)
-                        onConfirm(coordinates, name, colorHex)
+                        onConfirm(coordinates, name, colorHex, osmBuildingData)
                     }
                 }
             ) {

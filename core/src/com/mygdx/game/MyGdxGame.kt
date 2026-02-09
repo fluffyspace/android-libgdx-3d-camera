@@ -76,7 +76,17 @@ class MyGdxGame (
     var text: String? = null
     var fontCaches: MutableList<BitmapFontCache> = mutableListOf()
     var noRender: Boolean = false
-    var noDistance: Boolean = false
+
+    // Dual distance controls
+    var minDistanceObjects = 0f
+    var maxDistanceObjects = 1000f
+    var noDistanceObjects = false
+
+    var minDistanceBuildings = 0f
+    var maxDistanceBuildings = 1000f
+    var noDistanceBuildings = false
+
+    // Nearby (OSM) buildings
     var buildingInstances: MutableList<ModelInstance> = mutableListOf()
     var buildingModels: MutableList<Model> = mutableListOf()
     var buildingData: MutableList<Building> = mutableListOf()
@@ -86,6 +96,11 @@ class MyGdxGame (
     var onBuildingChange: ((Building) -> Unit)? = null
     private var buildingHeightDragStart = 0f
     private var buildingHeightOriginal = 0f
+
+    // Personal polygon objects (objects with OSM polygon data)
+    var personalBuildingInstances: MutableList<ModelInstance> = mutableListOf()
+    var personalBuildingModels: MutableList<Model> = mutableListOf()
+    var personalBuildingObjectIndices: MutableList<Int> = mutableListOf()
 
     data class MyPoint(var x: Float = 0f, var y: Float = 0f)
     data class MyPolar(var radius: Float = 0f, var degrees: Float = 0f)
@@ -161,12 +176,36 @@ class MyGdxGame (
 
     fun createInstances(){
         instances = mutableListOf()
+        personalBuildingInstances.clear()
+        personalBuildingModels.forEach { it.dispose() }
+        personalBuildingModels.clear()
+        personalBuildingObjectIndices.clear()
         updateObjectsCoordinates()
         for((index, objekt) in objects.withIndex()){
             println("ingo Dobio sam $objekt i ")
             fontCaches.add(BitmapFontCache(font, false))
-            instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
-            updateModel(instances.lastIndex)
+            if (objekt.polygon != null && objekt.polygon!!.size >= 3) {
+                // Polygon object: create building mesh with user color
+                val building = Building(
+                    id = objekt.osmId ?: 0L,
+                    polygon = objekt.polygon!!,
+                    heightMeters = objekt.heightMeters,
+                    minHeightMeters = objekt.minHeightMeters
+                )
+                val color = Color(objekt.libgdxcolor.r, objekt.libgdxcolor.g, objekt.libgdxcolor.b, 0.8f)
+                val model = buildingMeshGenerator.generate(building, cameraCartesian, ::geoToCartesian, color, 0.8f)
+                if (model != null) {
+                    personalBuildingModels.add(model)
+                    personalBuildingInstances.add(ModelInstance(model))
+                    personalBuildingObjectIndices.add(index)
+                }
+                // Still add a cube instance (invisible/placeholder) so indices stay aligned
+                instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
+                updateModel(instances.lastIndex)
+            } else {
+                instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
+                updateModel(instances.lastIndex)
+            }
         }
     }
     fun setBuildings(newBuildings: List<Building>) {
@@ -347,28 +386,19 @@ class MyGdxGame (
         return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
     }
 
-    fun noDistanceChanged(){
-        unselectObject()
-        toggleEditMode(false)
-        for((index, objekt) in objects.withIndex()){
-            if(noDistance) {
-                instances[index].transform.set(Matrix4())
-                val myPoint = getObjectsWithLimitedDistance(objekt)
-                instances[index].transform.mul(
-                    Matrix4().translate(myPoint)
-                        .rotate(upVector, objekt.rotationY)
-                        .rotate(xVector, objekt.rotationX)
-                        .scale(
-                            objekt.size,
-                            objekt.size,
-                            objekt.size
-                        )
-                )
-                showObjectsName(index)
-            } else {
-                updateModel(index)
-            }
-        }
+    private fun isObjectInDistanceRange(objekt: Objekt): Boolean {
+        if (noDistanceObjects) return true
+        val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+        val dist = distance3D(camTranslatingVector, objektPos)
+        return dist in minDistanceObjects..maxDistanceObjects
+    }
+
+    private fun isBuildingInDistanceRange(instance: ModelInstance): Boolean {
+        if (noDistanceBuildings) return true
+        val pos = Vector3()
+        instance.transform.getTranslation(pos)
+        val dist = distance3D(camTranslatingVector, pos)
+        return dist in minDistanceBuildings..maxDistanceBuildings
     }
 
     override fun render() {
@@ -383,8 +413,16 @@ class MyGdxGame (
         // Only clear depth buffer - ARCore camera background is already rendered
         Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT)
 
+        // Track which objects are polygon-based (should not render cube)
+        val polygonObjectIndices = personalBuildingObjectIndices.toSet()
+
         for((index, objekt) in objects.withIndex()){
-            objekt.visible = isVisible(cam!!, index)
+            // Skip cube rendering for polygon objects
+            if (index in polygonObjectIndices) {
+                objekt.visible = false
+                continue
+            }
+            objekt.visible = isVisible(cam!!, index) && isObjectInDistanceRange(objekt)
             if (!objekt.visible) {
                 continue
             }
@@ -453,11 +491,25 @@ class MyGdxGame (
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         modelBatch!!.begin(cam)
-        for(instance in instances) {
+        // Render cube objects (non-polygon)
+        for((index, instance) in instances.withIndex()) {
+            if (index in polygonObjectIndices) continue
+            if (index < objects.size && !objects[index].visible) continue
             modelBatch!!.render(instance, environment)
         }
+        // Render personal polygon objects with distance filtering
+        for ((i, instance) in personalBuildingInstances.withIndex()) {
+            val objIndex = personalBuildingObjectIndices[i]
+            val objekt = objects[objIndex]
+            val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+            val dist = distance3D(camTranslatingVector, objektPos)
+            if (!noDistanceObjects && dist !in minDistanceObjects..maxDistanceObjects) continue
+            modelBatch!!.render(instance, environment)
+        }
+        // Render nearby buildings with distance filtering
         if (buildingsVisible) {
             for (instance in buildingInstances) {
+                if (!isBuildingInDistanceRange(instance)) continue
                 modelBatch!!.render(instance, environment)
             }
         }
@@ -744,20 +796,18 @@ class MyGdxGame (
             val oldSelectedBuilding = selectedBuilding
             unselectObject()
             unselectBuilding()
-            if(!noDistance) {
-                val newObject = getObject(Gdx.input.x, Gdx.input.y)
-                selectedObject = if (newObject != oldSelectedObject) newObject else -1
-                System.out.println("Objekt je $selectedObject");
-                if (selectedObject != -1) {
-                    objects[selectedObject].let { objekt ->
-                        instances[selectedObject] = ModelInstance(selectedModel)
-                        updateModel(selectedObject)
-                    }
-                } else {
-                    // Try selecting a building if no user object was hit
-                    val newBuilding = getBuildingAtRay(Gdx.input.x, Gdx.input.y)
-                    selectedBuilding = if (newBuilding != oldSelectedBuilding) newBuilding else -1
+            val newObject = getObject(Gdx.input.x, Gdx.input.y)
+            selectedObject = if (newObject != oldSelectedObject) newObject else -1
+            System.out.println("Objekt je $selectedObject");
+            if (selectedObject != -1) {
+                objects[selectedObject].let { objekt ->
+                    instances[selectedObject] = ModelInstance(selectedModel)
+                    updateModel(selectedObject)
                 }
+            } else {
+                // Try selecting a building if no user object was hit
+                val newBuilding = getBuildingAtRay(Gdx.input.x, Gdx.input.y)
+                selectedBuilding = if (newBuilding != oldSelectedBuilding) newBuilding else -1
             }
             toggleEditMode(selectedObject != -1 || selectedBuilding != -1)
         } else { // a drag
@@ -892,6 +942,9 @@ class MyGdxGame (
             instance.model.dispose()
         }
         for(model in buildingModels){
+            model.dispose()
+        }
+        for(model in personalBuildingModels){
             model.dispose()
         }
     }

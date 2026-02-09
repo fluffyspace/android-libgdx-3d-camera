@@ -16,4 +16,8 @@ data class Objekt(
     var rotationY: Float = 0f,
     var rotationZ: Float = 0f,
     var color: Int = Color.WHITE,
+    var osmId: Long? = null,
+    var polygonJson: String? = null,
+    var heightMeters: Float = 10f,
+    var minHeightMeters: Float = 0f,
 )

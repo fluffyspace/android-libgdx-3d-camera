@@ -52,11 +52,13 @@ MAPS_API_KEY=your_api_key_here
 - Converts geographic coordinates (lat/lon/alt) to Cartesian using `geoToCartesian()`
 - Handles object selection, transformation (move/rotate/scale), and touch input
 - Receives orientation matrix from `OnDrawFrame.lastHeadView` interface
+- Personal objects with OSM polygon data rendered as 3D building meshes (via `BuildingMeshGenerator`)
+- Dual distance filtering: separate min/max ranges for personal objects and nearby buildings
 
 **ARCore Integration (android/src/com/mygdx/game/arcore/)**
 - `ARCoreSessionManager` - Manages ARCore session lifecycle, provides camera view matrix for drift-free orientation tracking
 - `ARCoreBackgroundRenderer` - Renders ARCore camera background as OpenGL texture
-- Device orientation comes exclusively from ARCore; SensorManager is only used for manual compass calibration (TYPE_ACCELEROMETER + TYPE_MAGNETIC_FIELD) triggered via the compass button
+- Device orientation comes exclusively from ARCore
 
 **Custom LibGDX Integration (android/src/com/mygdx/game/overr/)**
 - `AndroidApplicationOverrided` - Custom AndroidApplication subclass that AndroidLauncher extends for Compose integration
@@ -69,18 +71,26 @@ MAPS_API_KEY=your_api_key_here
 
 **UI Layer (android/src/com/mygdx/game/ui/)**
 - Jetpack Compose screens in `screens/` (MainScreen, MapViewerScreen, AROverlayScreen, MagnetExperimentScreen)
-- Dialogs in `dialogs/` (AddOrEditObjectDialog with place search)
+- Dialogs in `dialogs/` (AddOrEditObjectDialog with place search and OSM building auto-fetch)
+- Components in `components/` (ObjectListItem, BuildingPreviewRenderer)
 - Material 3 theming in `theme/`
 - `OrientationIndicator` - Custom View for compass overlay display
+- AR overlay has a settings panel (gear icon) with FOV controls and dual distance range sliders for objects/buildings
 
 **ViewModel Layer (android/src/com/mygdx/game/viewmodel/)**
 - `MainViewModel` - Manages object CRUD operations and camera state via StateFlow
 - `ARViewModel` - AR-specific state management
 
+**Network Layer (android/src/com/mygdx/game/network/)**
+- `OverpassClient` - Fetches OSM building footprints; includes `fetchBuildingAtPoint()` with point-in-polygon test for auto-associating objects with buildings
+- `BuildingCache` - Caches OSM building data locally
+
 **Data Layer**
-- `baza/Objekt` - Room entity for persistent storage (x=latitude, y=longitude, z=altitude)
+- `baza/Objekt` - Room entity for persistent storage (x=latitude, y=longitude, z=altitude, osmId, polygonJson, heightMeters, minHeightMeters)
+- `baza/UserBuilding` - Room entity for user-modified building heights
 - `baza/Daovi` - DAO interface for database operations
-- `notbaza/Objekt` - Runtime model with computed Cartesian offsets (diffX/Y/Z) and LibGDX Color
+- `notbaza/Objekt` - Runtime model with computed Cartesian offsets (diffX/Y/Z), LibGDX Color, and deserialized polygon data
+- `notbaza/Building` - Runtime building model with `LatLon` polygon
 - `DatastoreRepository` - Camera position persistence via DataStore Preferences
 
 ### Coordinate System
@@ -91,7 +101,7 @@ Objects use geographic coordinates internally but are rendered using ECEF-based 
 
 ### Database
 
-Room database (`database-name`) with single `Objekt` table. Uses KSP for annotation processing. Camera position persisted via DataStore.
+Room database (`database-name`) with `Objekt` and `UserBuilding` tables (version 3). Uses KSP for annotation processing. Camera position persisted via DataStore. Objects may optionally store OSM building polygon data (osmId, polygonJson, heightMeters, minHeightMeters) for 3D building rendering.
 
 ## Key Dependencies
 

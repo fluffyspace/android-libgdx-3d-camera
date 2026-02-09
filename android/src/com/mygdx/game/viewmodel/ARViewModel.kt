@@ -11,22 +11,10 @@ class ARViewModel : ViewModel() {
     var fov by mutableIntStateOf(34)
         private set
 
-    var cameraPositionText by mutableStateOf("")
-        private set
-
-    var compassResult by mutableStateOf("")
-        private set
-
     var editModeVisible by mutableStateOf(false)
         private set
 
     var saveMenuVisible by mutableStateOf(false)
-        private set
-
-    var calibrationVisible by mutableStateOf(false)
-        private set
-
-    var noDistance by mutableStateOf(false)
         private set
 
     var orientationDegrees by mutableFloatStateOf(0f)
@@ -36,6 +24,19 @@ class ARViewModel : ViewModel() {
         private set
 
     var buildingSelected by mutableStateOf(false)
+
+    // Settings panel
+    var settingsExpanded by mutableStateOf(false)
+
+    // Distance controls for personal objects
+    var minDistanceObjects by mutableFloatStateOf(0f)
+    var maxDistanceObjects by mutableFloatStateOf(1000f)
+    var noDistanceObjects by mutableStateOf(false)
+
+    // Distance controls for nearby buildings
+    var minDistanceBuildings by mutableFloatStateOf(0f)
+    var maxDistanceBuildings by mutableFloatStateOf(1000f)
+    var noDistanceBuildings by mutableStateOf(false)
 
     enum class EditMode {
         MOVE, MOVE_VERTICAL, ROTATE, SCALE, ADJUST_HEIGHT
@@ -49,14 +50,6 @@ class ARViewModel : ViewModel() {
         fov--
     }
 
-    fun updateCameraPosition(x: Float, y: Float, z: Float) {
-        cameraPositionText = "Camera: %.2f, %.2f, %.2f".format(x, y, z)
-    }
-
-    fun updateCompassResult(text: String) {
-        compassResult = text
-    }
-
     fun showEditMode(visible: Boolean) {
         editModeVisible = visible
     }
@@ -65,13 +58,8 @@ class ARViewModel : ViewModel() {
         saveMenuVisible = visible
     }
 
-    fun showCalibration(visible: Boolean) {
-        calibrationVisible = visible
-    }
-
-    fun toggleNoDistance(): Boolean {
-        noDistance = !noDistance
-        return noDistance
+    fun toggleSettingsExpanded() {
+        settingsExpanded = !settingsExpanded
     }
 
     fun updateOrientationDegrees(degrees: Float) {

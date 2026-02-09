@@ -40,6 +40,7 @@ import com.mygdx.game.R
 import com.mygdx.game.baza.Objekt
 import com.mygdx.game.ui.components.ObjectListItem
 import com.mygdx.game.ui.dialogs.AddOrEditObjectDialog
+import com.mygdx.game.ui.dialogs.OsmBuildingData
 import com.mygdx.game.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -196,8 +197,14 @@ fun MainScreen(
         AddOrEditObjectDialog(
             objectToEdit = null,
             onDismiss = { showAddDialog = false },
-            onConfirm = { coordinates, name, color ->
-                viewModel.createObjectFromInput(coordinates, name, color)?.let {
+            onConfirm = { coordinates, name, color, osmData ->
+                viewModel.createObjectFromInput(
+                    coordinates, name, color,
+                    osmId = osmData?.osmId,
+                    polygonJson = osmData?.polygonJson,
+                    heightMeters = osmData?.heightMeters ?: 10f,
+                    minHeightMeters = osmData?.minHeightMeters ?: 0f
+                )?.let {
                     viewModel.addObject(it)
                 }
                 showAddDialog = false
@@ -220,8 +227,14 @@ fun MainScreen(
                 showDialogWithPickedCoords = false
                 onClearPickedCoordinates()
             },
-            onConfirm = { coordinates, name, color ->
-                viewModel.createObjectFromInput(coordinates, name, color)?.let {
+            onConfirm = { coordinates, name, color, osmData ->
+                viewModel.createObjectFromInput(
+                    coordinates, name, color,
+                    osmId = osmData?.osmId,
+                    polygonJson = osmData?.polygonJson,
+                    heightMeters = osmData?.heightMeters ?: 10f,
+                    minHeightMeters = osmData?.minHeightMeters ?: 0f
+                )?.let {
                     viewModel.addObject(it)
                 }
                 showDialogWithPickedCoords = false
@@ -240,8 +253,14 @@ fun MainScreen(
         AddOrEditObjectDialog(
             objectToEdit = objekt,
             onDismiss = { objectToEdit = null },
-            onConfirm = { coordinates, name, color ->
-                viewModel.createObjectFromInput(coordinates, name, color)?.let {
+            onConfirm = { coordinates, name, color, osmData ->
+                viewModel.createObjectFromInput(
+                    coordinates, name, color,
+                    osmId = osmData?.osmId ?: objekt.osmId,
+                    polygonJson = osmData?.polygonJson ?: objekt.polygonJson,
+                    heightMeters = osmData?.heightMeters ?: objekt.heightMeters,
+                    minHeightMeters = osmData?.minHeightMeters ?: objekt.minHeightMeters
+                )?.let {
                     it.id = objekt.id
                     viewModel.updateObject(it)
                 }

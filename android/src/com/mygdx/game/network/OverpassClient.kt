@@ -69,6 +69,30 @@ object OverpassClient {
         return 0f
     }
 
+    suspend fun fetchBuildingAtPoint(lat: Double, lon: Double): Building? {
+        val buildings = fetchBuildings(lat, lon, radiusMeters = 50)
+        return buildings.firstOrNull { pointInPolygon(lat, lon, it.polygon) }
+    }
+
+    fun pointInPolygon(lat: Double, lon: Double, polygon: List<LatLon>): Boolean {
+        var inside = false
+        val n = polygon.size
+        var j = n - 1
+        for (i in 0 until n) {
+            val yi = polygon[i].lat
+            val xi = polygon[i].lon
+            val yj = polygon[j].lat
+            val xj = polygon[j].lon
+            if (((yi > lat) != (yj > lat)) &&
+                (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)
+            ) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
+    }
+
     private data class OverpassResponse(
         val elements: List<OverpassElement> = emptyList()
     )

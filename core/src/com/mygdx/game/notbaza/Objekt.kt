@@ -19,5 +19,10 @@ data class Objekt(
     var diffZ: Float = 0f,
     var changed: Boolean = false,
     var visible: Boolean = false,
+    var osmId: Long? = null,
+    var polygonJson: String? = null,
+    var polygon: List<LatLon>? = null,
+    var heightMeters: Float = 10f,
+    var minHeightMeters: Float = 0f,
 )
 

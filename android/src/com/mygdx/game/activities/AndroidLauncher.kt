@@ -1,13 +1,8 @@
 package com.mygdx.game.activities
 
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -33,6 +28,7 @@ import com.mygdx.game.baza.UserBuilding
 import com.mygdx.game.baza.toBuilding
 import com.mygdx.game.baza.toPolygonJson
 import com.mygdx.game.notbaza.Building
+import com.mygdx.game.notbaza.LatLon
 import com.mygdx.game.notbaza.Objekt
 import com.mygdx.game.overr.AndroidApplicationOverrided
 import com.mygdx.game.ui.screens.AROverlayScreen
@@ -46,7 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventListener {
+class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
     // ARCore session manager (replaces HeadTracker)
     private lateinit var arCoreSessionManager: ARCoreSessionManager
     private lateinit var arCoreBackgroundRenderer: ARCoreBackgroundRenderer
@@ -60,15 +56,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     private lateinit var arViewModel: ARViewModel
     private lateinit var orientationUpdateJob: Job
 
-    var sensorManager: SensorManager? = null
-    private var accelerometer: Sensor? = null
-    private var magnetometer: Sensor? = null
-
-    private val accelerometerReading = FloatArray(3)
-    private val magnetometerReading = FloatArray(3)
-
-    private val rotationMatrix = FloatArray(9)
-    private val orientationAngles = FloatArray(3)
 
     private val activityResultLauncher =
         registerForActivityResult(
@@ -96,8 +83,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
     lateinit var game: MyGdxGame
     lateinit var db: AppDatabase
 
-    var calibrationCounter = 0
-    var calibrationList = mutableListOf<Int>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,6 +108,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         val objectsIntentExtra = intent.getStringExtra("objects")
         objects = gson.fromJson(objectsIntentExtra, object : TypeToken<ArrayList<Objekt>>() {}.type)
         convertObjectColors(objects)
+        deserializePolygons(objects)
 
         game = MyGdxGame(
             this@AndroidLauncher,
@@ -141,11 +127,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                     arViewModel.showSaveMenu(change)
                 }
             },
-            { pos ->
-                lifecycleScope.launch(Dispatchers.Main) {
-                    arViewModel.updateCameraPosition(pos.x, pos.y, pos.z)
-                }
-            }
+            { _ -> }
         )
         initialize(game, config)
         initializeLayouts()
@@ -224,23 +206,22 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         }
     }
 
-    fun startCalibration() {
-        calibrationCounter = 0
-        calibrationList.clear()
-
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        magnetometer = sensorManager?.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
-
-        if (accelerometer != null && magnetometer != null) {
-            sensorManager?.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
-            sensorManager?.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_NORMAL)
-        }
-    }
-
     fun convertObjectColors(objekti: List<Objekt>) {
         for (objekt in objekti) {
             objekt.libgdxcolor = colorStringToLibgdxColor(Color.valueOf(objekt.color))
+        }
+    }
+
+    fun deserializePolygons(objekti: List<Objekt>) {
+        for (objekt in objekti) {
+            val json = objekt.polygonJson
+            if (json != null) {
+                try {
+                    objekt.polygon = gson.fromJson<List<LatLon>>(
+                        json, object : TypeToken<List<LatLon>>() {}.type
+                    )
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -263,14 +244,25 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                             arViewModel.decreaseFov()
                             game.fov = fov
                         },
-                        onCompassClick = {
-                            arViewModel.showCalibration(true)
-                            startCalibration()
+                        onObjectDistanceChanged = { min, max ->
+                            arViewModel.minDistanceObjects = min
+                            arViewModel.maxDistanceObjects = max
+                            game.minDistanceObjects = min
+                            game.maxDistanceObjects = max
                         },
-                        onNoDistanceClick = {
-                            val noDistance = arViewModel.toggleNoDistance()
-                            game.noDistance = noDistance
-                            game.noDistanceChanged()
+                        onBuildingDistanceChanged = { min, max ->
+                            arViewModel.minDistanceBuildings = min
+                            arViewModel.maxDistanceBuildings = max
+                            game.minDistanceBuildings = min
+                            game.maxDistanceBuildings = max
+                        },
+                        onNoDistanceObjectsToggle = { enabled ->
+                            arViewModel.noDistanceObjects = enabled
+                            game.noDistanceObjects = enabled
+                        },
+                        onNoDistanceBuildingsToggle = { enabled ->
+                            arViewModel.noDistanceBuildings = enabled
+                            game.noDistanceBuildings = enabled
                         },
                         onMoveClick = {
                             if (game.editMode == MyGdxGame.EditMode.move) {
@@ -422,7 +414,11 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
                             objekt.rotationX,
                             objekt.rotationY,
                             objekt.rotationZ,
-                            objekt.color
+                            objekt.color,
+                            objekt.osmId,
+                            objekt.polygonJson,
+                            objekt.heightMeters,
+                            objekt.minHeightMeters
                         )
                     )
                 }
@@ -491,7 +487,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         super.onPause()
         orientationUpdateJob.cancel()
         arCoreSessionManager.pause()
-        sensorManager?.unregisterListener(this)
     }
 
     override fun onDestroy() {
@@ -523,49 +518,4 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame, SensorEventL
         return com.badlogic.gdx.graphics.Color(color.red(), color.green(), color.blue(), color.alpha())
     }
 
-    override fun onSensorChanged(event: SensorEvent) {
-        if (event.sensor == accelerometer) {
-            System.arraycopy(event.values, 0, accelerometerReading, 0, accelerometerReading.size)
-        } else if (event.sensor == magnetometer) {
-            System.arraycopy(event.values, 0, magnetometerReading, 0, magnetometerReading.size)
-        }
-        updateOrientation()
-    }
-
-    private fun updateOrientation() {
-        calibrationCounter++
-        SensorManager.getRotationMatrix(
-            rotationMatrix,
-            null,
-            accelerometerReading,
-            magnetometerReading
-        )
-        SensorManager.getOrientation(rotationMatrix, orientationAngles)
-
-        var azimuthInDegrees = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
-
-        if (calibrationCounter % 200 == 0) {
-            arViewModel.updateCompassResult(azimuthInDegrees.toInt().toString())
-        }
-
-        if (calibrationCounter < 1000) return
-        calibrationList.add(azimuthInDegrees.toInt())
-
-        println(azimuthInDegrees)
-
-        if (calibrationCounter > 5000) {
-            arViewModel.showCalibration(false)
-            val averageAzimuth = (calibrationList.sum() / calibrationList.size.toDouble())
-            arCoreSessionManager.headingDegrees = averageAzimuth
-            println("Average azimuth: $averageAzimuth, $calibrationList")
-            sensorManager?.unregisterListener(this)
-            arViewModel.updateCompassResult(
-                "${averageAzimuth.toInt()}\n+-${calibrationList.max() - calibrationList.min()}"
-            )
-        }
-    }
-
-    override fun onAccuracyChanged(p0: Sensor?, p1: Int) {
-        // Not implemented
-    }
 }
