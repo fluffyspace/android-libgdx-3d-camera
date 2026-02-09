@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -269,6 +272,7 @@ fun MapViewerScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
+                .statusBarsPadding()
                 .padding(top = 16.dp, end = 16.dp)
         ) {
             SmallFloatingActionButton(
@@ -280,34 +284,23 @@ fun MapViewerScreen(
                 expanded = showLayerMenu,
                 onDismissRequest = { showLayerMenu = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Normal") },
-                    onClick = {
-                        selectedMapType = MapType.NORMAL
-                        showLayerMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Satellite") },
-                    onClick = {
-                        selectedMapType = MapType.SATELLITE
-                        showLayerMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Terrain") },
-                    onClick = {
-                        selectedMapType = MapType.TERRAIN
-                        showLayerMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Hybrid") },
-                    onClick = {
-                        selectedMapType = MapType.HYBRID
-                        showLayerMenu = false
-                    }
-                )
+                listOf(
+                    "Normal" to MapType.NORMAL,
+                    "Satellite" to MapType.SATELLITE,
+                    "Terrain" to MapType.TERRAIN,
+                    "Hybrid" to MapType.HYBRID
+                ).forEach { (label, type) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            selectedMapType = type
+                            showLayerMenu = false
+                        },
+                        trailingIcon = if (selectedMapType == type) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        } else null
+                    )
+                }
             }
         }
 
@@ -332,6 +325,7 @@ fun MapViewerScreen(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
                     .padding(bottom = 32.dp)
             ) {
                 Icon(Icons.Default.Check, contentDescription = "Confirm location")
@@ -344,6 +338,7 @@ fun MapViewerScreen(
                 onClick = { mapBuildingViewModel.startDrawing() },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
+                    .statusBarsPadding()
                     .padding(top = 80.dp, end = 16.dp),
                 containerColor = MaterialTheme.colorScheme.secondaryContainer
             ) {
@@ -357,6 +352,8 @@ fun MapViewerScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .background(
                         Color.White.copy(alpha = 0.9f),
                         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)

@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private var pendingColor by mutableStateOf<String?>(null)
 
     private lateinit var coordinatePickerLauncher: ActivityResultLauncher<Intent>
+    private lateinit var cameraPickerLauncher: ActivityResultLauncher<Intent>
     private lateinit var locationPermissionRequest: ActivityResultLauncher<Array<String>>
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +52,17 @@ class MainActivity : ComponentActivity() {
                 val lat = result.data?.getDoubleExtra("latitude", 0.0) ?: 0.0
                 val lon = result.data?.getDoubleExtra("longitude", 0.0) ?: 0.0
                 pickedCoordinates = "$lat, $lon, 0.0"
+            }
+        }
+
+        cameraPickerLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val lat = result.data?.getDoubleExtra("latitude", 0.0) ?: 0.0
+                val lon = result.data?.getDoubleExtra("longitude", 0.0) ?: 0.0
+                val objekt = Objekt(0, lat.toFloat(), lon.toFloat(), 0f)
+                viewModel.updateCamera(objekt)
             }
         }
 
@@ -98,7 +110,8 @@ class MainActivity : ComponentActivity() {
                     onOpenMap = { objekt ->
                         val mapIntent = Intent(this@MainActivity, MapViewer::class.java)
                         mapIntent.putExtra("coordinates", Gson().toJson(objekt))
-                        startActivity(mapIntent)
+                        mapIntent.putExtra("pickMode", true)
+                        cameraPickerLauncher.launch(mapIntent)
                     },
                     onOpenViewer = { camera, objects ->
                         Log.d("ingo", "open viewer")

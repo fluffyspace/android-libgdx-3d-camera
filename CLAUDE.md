@@ -31,12 +31,15 @@ Note: Physical distance to objects is determined solely by GPS coordinates. Ther
 ./gradlew clean
 ```
 
+There are no automated tests in this project. Testing is done manually on-device.
+
 ## Setup
 
-Google Maps API key must be set in `local.properties`:
-```
-MAPS_API_KEY=your_api_key_here
-```
+- Google Maps API key must be set in `local.properties`: `MAPS_API_KEY=your_api_key_here`
+- Requires ARCore-capable device (ARCore is marked as required)
+- minSdk 26 (Android 8.0), targetSdk/compileSdk 35
+- Kotlin 2.0.21, Gradle 8.13, Java 11 (android) / Java 17 (core)
+- KSP used for Room annotation processing
 
 ## Architecture
 
@@ -61,13 +64,18 @@ MAPS_API_KEY=your_api_key_here
 - Device orientation comes exclusively from ARCore
 
 **Custom LibGDX Integration (android/src/com/mygdx/game/overr/)**
-- `AndroidApplicationOverrided` - Custom AndroidApplication subclass that AndroidLauncher extends for Compose integration
+- `AndroidApplicationOverrided` (Java) - Custom AndroidApplication subclass creating a FrameLayout with both GL SurfaceView and ComposeView overlay, enabling Compose UI on top of LibGDX OpenGL
 
 **Android Activities (android/src/com/mygdx/game/activities/)**
-- `MainActivity` - Entry point with Jetpack Compose UI, manages object list
-- `AndroidLauncher` - LibGDX activity with ARCore integration and edit mode UI
+- `MainActivity` - Entry point (portrait), Jetpack Compose UI, manages object list. Accepts SEND intents with Google Maps URLs for location sharing.
+- `AndroidLauncher` - LibGDX activity (landscape), ARCore integration and edit mode UI
 - `MapViewer` - Google Maps Compose for placing objects geographically
-- `MagnetExperiment` - Standalone activity for testing magnetometer/rotation sensors (debug tool)
+- `MagnetExperiment` - Standalone activity (landscape) for testing magnetometer/rotation sensors (debug tool)
+
+**Inter-Activity Data Flow:**
+- MainActivity → AndroidLauncher: camera position + object list as JSON via Intent extras ("camera", "objects")
+- MainActivity → MapViewer: coordinates JSON + "pickMode" flag; MapViewer returns lat/lon via ActivityResult
+- Color conversion: Android Color → LibGDX Color happens in AndroidLauncher (`colorStringToLibgdxColor()`)
 
 **UI Layer (android/src/com/mygdx/game/ui/)**
 - Jetpack Compose screens in `screens/` (MainScreen, MapViewerScreen, AROverlayScreen, MagnetExperimentScreen)
@@ -75,7 +83,10 @@ MAPS_API_KEY=your_api_key_here
 - Components in `components/` (ObjectListItem, BuildingPreviewRenderer)
 - Material 3 theming in `theme/`
 - `OrientationIndicator` - Custom View for compass overlay display
-- AR overlay has a settings panel (gear icon) with FOV controls and dual distance range sliders for objects/buildings
+- AR overlay has a settings panel (gear icon) with dual distance range sliders for objects/buildings
+
+**Edit Modes in AR View:**
+- move, move_vertical, rotate, scale, adjust_building_height (defined in both MyGdxGame.EditMode and ARViewModel.EditMode)
 
 **ViewModel Layer (android/src/com/mygdx/game/viewmodel/)**
 - `MainViewModel` - Manages object CRUD operations and camera state via StateFlow
@@ -93,15 +104,26 @@ MAPS_API_KEY=your_api_key_here
 - `notbaza/Building` - Runtime building model with `LatLon` polygon
 - `DatastoreRepository` - Camera position persistence via DataStore Preferences
 
+**Core Module Interfaces (Java, not Kotlin):**
+- `OnDrawFrame` - `getLastHeadView()` and `getProjectionMatrix()` provide ARCore view/projection matrices to LibGDX
+- `DeviceCameraControl` - `prepareCamera()` is now a no-op (ARCore handles camera)
+
 ### Coordinate System
 
 Objects use geographic coordinates internally but are rendered using ECEF-based Cartesian offsets:
 - `x` = latitude, `y` = longitude, `z` = altitude
 - `diffX/Y/Z` = computed Cartesian offset from camera position
+- ECEF Y/Z are swapped when computing offsets (see MyGdxGame.kt)
 
 ### Database
 
 Room database (`database-name`) with `Objekt` and `UserBuilding` tables (version 3). Uses KSP for annotation processing. Camera position persisted via DataStore. Objects may optionally store OSM building polygon data (osmId, polygonJson, heightMeters, minHeightMeters) for 3D building rendering.
+
+Migrations: v1→v2 added `user_building` table; v2→v3 added OSM fields to `Objekt`.
+
+## Related Documentation
+
+- `BUILDING_INTEGRATION.md` - Detailed documentation of OSM building footprint integration, architecture decisions, and known limitations
 
 ## Key Dependencies
 
