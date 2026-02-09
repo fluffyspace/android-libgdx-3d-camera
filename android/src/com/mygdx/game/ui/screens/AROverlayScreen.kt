@@ -46,8 +46,6 @@ import com.mygdx.game.viewmodel.ARViewModel
 fun AROverlayScreen(
     viewModel: ARViewModel,
     onClose: () -> Unit,
-    onFovUp: () -> Unit,
-    onFovDown: () -> Unit,
     onObjectDistanceChanged: (min: Float, max: Float) -> Unit,
     onBuildingDistanceChanged: (min: Float, max: Float) -> Unit,
     onNoDistanceObjectsToggle: (Boolean) -> Unit,
@@ -120,8 +118,6 @@ fun AROverlayScreen(
             ) {
                 SettingsPanel(
                     viewModel = viewModel,
-                    onFovUp = onFovUp,
-                    onFovDown = onFovDown,
                     onObjectDistanceChanged = onObjectDistanceChanged,
                     onBuildingDistanceChanged = onBuildingDistanceChanged,
                     onNoDistanceObjectsToggle = onNoDistanceObjectsToggle,
@@ -226,8 +222,6 @@ fun AROverlayScreen(
 @Composable
 private fun SettingsPanel(
     viewModel: ARViewModel,
-    onFovUp: () -> Unit,
-    onFovDown: () -> Unit,
     onObjectDistanceChanged: (min: Float, max: Float) -> Unit,
     onBuildingDistanceChanged: (min: Float, max: Float) -> Unit,
     onNoDistanceObjectsToggle: (Boolean) -> Unit,
@@ -240,31 +234,6 @@ private fun SettingsPanel(
             .background(Color(0xCC1A1A1A))
             .padding(12.dp)
     ) {
-        // FOV section
-        Text("FOV: ${viewModel.fov}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row {
-            Box(
-                modifier = Modifier
-                    .background(Color.White, RoundedCornerShape(4.dp))
-                    .clickable { onFovDown() }
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text("-", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .background(Color.White, RoundedCornerShape(4.dp))
-                    .clickable { onFovUp() }
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text("+", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
         // Objects distance section
         Text("Objects", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(4.dp))

@@ -42,7 +42,6 @@ class MyGdxGame (
     var camera: Objekt,
     var objects: MutableList<Objekt>,
     var deviceCameraControl: DeviceCameraControl,
-    var fov: Int,
     var toggleEditMode: (Boolean) -> Unit,
     var onChange: (Boolean) -> Unit,
     var camHeightChange: (Vector3) -> Unit,
@@ -269,8 +268,9 @@ class MyGdxGame (
     var camTranslatingVector = Vector3()
     fun updateCamera(){
         cam!!.apply {
-            val aspect: Float = viewportWidth / viewportHeight
-            projection.setToProjection(abs(near), abs(far), fieldOfView, aspect)
+            // Use ARCore's projection matrix which has correct FOV from camera intrinsics
+            val arProjection = onDrawFrame.projectionMatrix
+            projection.set(arProjection)
 
             // Camera position based on GPS coordinates only (no vertical slide adjustment)
             val newCoordinate = geoToCartesian(camera.x.toDouble(), camera.y.toDouble(), camera.z.toDouble())
@@ -404,8 +404,6 @@ class MyGdxGame (
     override fun render() {
         if(noRender) return
         touchHandler()
-
-        cam!!.fieldOfView = fov.toFloat()
 
         updateCamera()
 

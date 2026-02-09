@@ -38,6 +38,9 @@ class ARCoreSessionManager(private val activity: Activity) {
     // View matrix from ARCore camera (16 floats)
     private val viewMatrix = FloatArray(16)
 
+    // Projection matrix from ARCore camera (16 floats)
+    private val projMatrix = FloatArray(16)
+
     // Heading offset for calibration (similar to OrientationEKF.headingDegrees)
     var headingDegrees: Double = 0.0
 
@@ -255,6 +258,22 @@ class ARCoreSessionManager(private val activity: Activity) {
             Log.w(TAG, "Geospatial pose not available", e)
             isGeospatialAvailable = false
         }
+    }
+
+    /**
+     * Get the camera projection matrix from ARCore.
+     * This provides the correct FOV based on the actual camera intrinsics.
+     */
+    fun getProjectionMatrix(): FloatArray {
+        val currentFrame = frame
+
+        if (currentFrame != null && currentFrame.camera.trackingState == TrackingState.TRACKING) {
+            currentFrame.camera.getProjectionMatrix(projMatrix, 0, 1f, 300f)
+        } else {
+            Matrix.setIdentityM(projMatrix, 0)
+        }
+
+        return projMatrix
     }
 
     /**

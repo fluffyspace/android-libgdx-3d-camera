@@ -2,15 +2,11 @@ package com.mygdx.game.viewmodel
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 
 class ARViewModel : ViewModel() {
-    var fov by mutableIntStateOf(34)
-        private set
-
     var editModeVisible by mutableStateOf(false)
         private set
 
@@ -40,14 +36,6 @@ class ARViewModel : ViewModel() {
 
     enum class EditMode {
         MOVE, MOVE_VERTICAL, ROTATE, SCALE, ADJUST_HEIGHT
-    }
-
-    fun increaseFov() {
-        fov++
-    }
-
-    fun decreaseFov() {
-        fov--
     }
 
     fun showEditMode(visible: Boolean) {

@@ -50,7 +50,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
 
     private var origWidth = 0
     private var origHeight = 0
-    var fov: Int = 34
     var gson = Gson()
 
     private lateinit var arViewModel: ARViewModel
@@ -115,7 +114,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
             gson.fromJson(cameraIntentExtra, Objekt::class.java),
             objects,
             cameraControl,
-            fov,
             { editModeEnabled ->
                 lifecycleScope.launch(Dispatchers.Main) {
                     arViewModel.buildingSelected = game.selectedBuilding != -1
@@ -234,16 +232,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                     AROverlayScreen(
                         viewModel = arViewModel,
                         onClose = { finish() },
-                        onFovUp = {
-                            fov++
-                            arViewModel.increaseFov()
-                            game.fov = fov
-                        },
-                        onFovDown = {
-                            fov--
-                            arViewModel.decreaseFov()
-                            game.fov = fov
-                        },
                         onObjectDistanceChanged = { min, max ->
                             arViewModel.minDistanceObjects = min
                             arViewModel.maxDistanceObjects = max
@@ -512,6 +500,10 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
         }
 
         return arCoreSessionManager.getViewMatrix()
+    }
+
+    override fun getProjectionMatrix(): FloatArray {
+        return arCoreSessionManager.getProjectionMatrix()
     }
 
     fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color {
