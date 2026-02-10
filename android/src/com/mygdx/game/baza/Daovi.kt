@@ -23,6 +23,9 @@ interface ObjektDao {
     @Query("SELECT * FROM Objekt WHERE rowid = :rowId")
     fun findByRowId(rowId: Long): List<Objekt>
 
+    @Query("UPDATE Objekt SET hidden = :hidden WHERE id = :id")
+    fun updateHidden(id: Int, hidden: Boolean)
+
     @Delete
     fun delete(polje: Objekt)
 }

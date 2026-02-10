@@ -152,31 +152,31 @@ fun AddOrEditObjectDialog(
     var osmSearchStatus by remember { mutableStateOf("") }
     var isSearchingOsm by remember { mutableStateOf(false) }
     var lastSearchedCoords by remember { mutableStateOf("") }
+    var nearbyBuildings by remember { mutableStateOf<List<BuildingWithDistance>>(emptyList()) }
+    var showBuildingPicker by remember { mutableStateOf(false) }
 
-    // Auto-fetch OSM building when coordinates change
+    // Auto-fetch nearby OSM buildings when coordinates change
     LaunchedEffect(coordinates) {
         val parsed = parseCoordinatesLatLon(coordinates)
         if (parsed != null && coordinates != lastSearchedCoords) {
             lastSearchedCoords = coordinates
             isSearchingOsm = true
-            osmSearchStatus = "Searching for building..."
+            osmSearchStatus = "Searching for buildings..."
             osmBuildingData = null
+            nearbyBuildings = emptyList()
             try {
-                val building = OverpassClient.fetchBuildingAtPoint(parsed.first, parsed.second)
-                if (building != null) {
-                    osmBuildingData = OsmBuildingData(
-                        osmId = building.id,
-                        polygonJson = Gson().toJson(building.polygon),
-                        heightMeters = building.heightMeters,
-                        minHeightMeters = building.minHeightMeters,
-                        polygon = building.polygon
-                    )
-                    osmSearchStatus = "Building found (OSM #${building.id})"
+                val results = OverpassClient.fetchBuildingsNearPoint(parsed.first, parsed.second, 50)
+                if (results.isNotEmpty()) {
+                    nearbyBuildings = results.map { (building, dist) ->
+                        BuildingWithDistance(building, dist)
+                    }
+                    showBuildingPicker = true
+                    osmSearchStatus = "${results.size} building(s) found"
                 } else {
-                    osmSearchStatus = "No building found (will use cube)"
+                    osmSearchStatus = "No buildings found (will use sphere)"
                 }
             } catch (_: Exception) {
-                osmSearchStatus = "OSM lookup failed (will use cube)"
+                osmSearchStatus = "OSM lookup failed (will use sphere)"
             }
             isSearchingOsm = false
         }
@@ -202,6 +202,29 @@ fun AddOrEditObjectDialog(
     }
 
     val previewColor = Color.hsv(hue, 1f, 1f)
+
+    // Building picker dialog
+    if (showBuildingPicker && nearbyBuildings.isNotEmpty()) {
+        BuildingPickerDialog(
+            buildings = nearbyBuildings,
+            colorHue = hue,
+            onSelect = { building ->
+                osmBuildingData = OsmBuildingData(
+                    osmId = building.id,
+                    polygonJson = Gson().toJson(building.polygon),
+                    heightMeters = building.heightMeters,
+                    minHeightMeters = building.minHeightMeters,
+                    polygon = building.polygon
+                )
+                osmSearchStatus = "Building selected (OSM #${building.id})"
+                showBuildingPicker = false
+            },
+            onSkip = {
+                osmSearchStatus = "No building selected (will use sphere)"
+                showBuildingPicker = false
+            }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -339,8 +362,24 @@ fun AddOrEditObjectDialog(
                             color = if (osmBuildingData != null)
                                 MaterialTheme.colorScheme.primary
                             else
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        if (!isSearchingOsm && nearbyBuildings.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TextButton(
+                                onClick = { showBuildingPicker = true },
+                                modifier = Modifier.height(28.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 8.dp, vertical = 0.dp
+                                )
+                            ) {
+                                Text(
+                                    text = if (osmBuildingData != null) "Change" else "Pick",
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
                     }
                 }
 

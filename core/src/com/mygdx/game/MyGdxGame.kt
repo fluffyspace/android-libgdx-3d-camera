@@ -20,6 +20,7 @@ import com.badlogic.gdx.graphics.g3d.ModelInstance
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Intersector
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.math.Quaternion
@@ -28,9 +29,11 @@ import com.badlogic.gdx.math.collision.BoundingBox
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.ExtendViewport
 import com.mygdx.game.notbaza.Building
+import com.mygdx.game.notbaza.LatLon
 import com.mygdx.game.notbaza.Objekt
 import kotlin.math.abs
 import kotlin.math.acos
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -101,6 +104,15 @@ class MyGdxGame (
     var personalBuildingModels: MutableList<Model> = mutableListOf()
     var personalBuildingObjectIndices: MutableList<Int> = mutableListOf()
 
+    // Vertices editor state
+    var shapeRenderer: ShapeRenderer? = null
+    var vertexWorldPositions: MutableList<Vector3> = mutableListOf()
+    var vertexPolygonClosed: Boolean = false
+    var vertexExtrudeHeight: Float = 10f
+    var verticesEditorActive: Boolean = false
+    private var vertexPreviewModel: Model? = null
+    private var vertexPreviewInstance: ModelInstance? = null
+
     data class MyPoint(var x: Float = 0f, var y: Float = 0f)
     data class MyPolar(var radius: Float = 0f, var degrees: Float = 0f)
     data class Vector3Double(var x: Double, var y: Double, var z: Double)
@@ -156,14 +168,15 @@ class MyGdxGame (
         environment!!.set(ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f))
         environment!!.add(DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f))
         val modelBuilder = ModelBuilder()
-        selectedModel = modelBuilder.createBox(
-            1f, 1f, 1f,
+        selectedModel = modelBuilder.createSphere(
+            1f, 1f, 1f, 20, 20,
             Material(ColorAttribute.createDiffuse(Color.RED)),
             (
                     VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong()
         )
         modelBatch = ModelBatch()
         batch = SpriteBatch()
+        shapeRenderer = ShapeRenderer()
         updateCamera()
         createInstances()
 
@@ -198,7 +211,7 @@ class MyGdxGame (
                     personalBuildingInstances.add(ModelInstance(model))
                     personalBuildingObjectIndices.add(index)
                 }
-                // Still add a cube instance (invisible/placeholder) so indices stay aligned
+                // Still add a sphere instance (invisible/placeholder) so indices stay aligned
                 instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
                 updateModel(instances.lastIndex)
             } else {
@@ -256,8 +269,8 @@ class MyGdxGame (
 
     fun generateModelForObject(color: Color): Model{
         color.a = 0.4f
-        return ModelBuilder().createBox(
-            1f, 1f, 1f,
+        return ModelBuilder().createSphere(
+            1f, 1f, 1f, 20, 20,
             Material(ColorAttribute.createDiffuse(color)),
             (
                     VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong()
@@ -386,6 +399,99 @@ class MyGdxGame (
         return Vector3(x.toFloat(), y.toFloat(), z.toFloat())
     }
 
+    // Inverse of geoToCartesian: ECEF → lat/lon/alt (spherical approximation)
+    fun cartesianToGeo(x: Double, y: Double, z: Double): Triple<Double, Double, Double> {
+        val lon = Math.toDegrees(atan2(y, x))
+        val lat = Math.toDegrees(atan2(z, sqrt(x * x + y * y)))
+        val alt = sqrt(x * x + y * y + z * z) - EARTH_RADIUS
+        return Triple(lat, lon, alt)
+    }
+
+    /**
+     * Convert an ARCore hit-test world point to geographic coordinates.
+     * ARCore point is in ARCore world space; we reverse the view matrix transforms
+     * (minus the quat/device orientation) to get back to our rendering world space,
+     * then convert to ECEF and finally to lat/lon/alt.
+     */
+    fun arHitToGeo(arX: Float, arY: Float, arZ: Float): LatLon {
+        val arPoint = Vector3(arX, arY, arZ)
+
+        // Build inverse of: R_worldRot * R_earthRot * T_cam
+        // = T_cam^(-1) * R_earthRot^(-1) * R_worldRot^(-1)
+        val invEarthRot = Quaternion(cameraEarthRot).conjugate()
+        val inverseMatrix = Matrix4()
+            .rotate(upVector, -(worldRotation + worldRotationTmp))
+            .rotate(invEarthRot)
+            .translate(-camTranslatingVector.x, -camTranslatingVector.y, -camTranslatingVector.z)
+
+        val worldPoint = Vector3(arPoint)
+        worldPoint.mul(inverseMatrix)
+
+        // Convert from world space (diffX/Y/Z) to ECEF
+        // diffX = ecefX - camX, diffZ = ecefY - camY, diffY = ecefZ - camZ
+        val ecefX = worldPoint.x.toDouble() + cameraCartesian.x.toDouble()
+        val ecefY = worldPoint.z.toDouble() + cameraCartesian.y.toDouble()
+        val ecefZ = worldPoint.y.toDouble() + cameraCartesian.z.toDouble()
+
+        val (lat, lon, _) = cartesianToGeo(ecefX, ecefY, ecefZ)
+        return LatLon(lat, lon)
+    }
+
+    /**
+     * Convert a LatLon vertex to rendering world-space position.
+     */
+    fun geoToWorldPosition(latLon: LatLon, altitude: Double = 0.0): Vector3 {
+        val cart = geoToCartesian(latLon.lat, latLon.lon, altitude)
+        return Vector3(
+            cart.x - cameraCartesian.x,
+            cart.z - cameraCartesian.z,  // Y/Z swap
+            cart.y - cameraCartesian.y
+        )
+    }
+
+    fun updateVertexPositions(vertices: List<LatLon>) {
+        vertexWorldPositions.clear()
+        for (v in vertices) {
+            vertexWorldPositions.add(geoToWorldPosition(v))
+        }
+        updateVertexPreview(vertices)
+    }
+
+    private fun updateVertexPreview(vertices: List<LatLon>) {
+        vertexPreviewModel?.dispose()
+        vertexPreviewModel = null
+        vertexPreviewInstance = null
+
+        if (!vertexPolygonClosed || vertices.size < 3) return
+
+        val building = Building(
+            id = 0L,
+            polygon = vertices,
+            heightMeters = vertexExtrudeHeight,
+            minHeightMeters = 0f
+        )
+        try {
+            val color = if (selectedObject >= 0 && selectedObject < objects.size)
+                Color(objects[selectedObject].libgdxcolor.r, objects[selectedObject].libgdxcolor.g, objects[selectedObject].libgdxcolor.b, 0.5f)
+            else Color(0.3f, 0.8f, 0.3f, 0.5f)
+            val model = buildingMeshGenerator.generate(building, cameraCartesian, ::geoToCartesian, color, 0.5f)
+            if (model != null) {
+                vertexPreviewModel = model
+                vertexPreviewInstance = ModelInstance(model)
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun clearVertexEditor() {
+        vertexWorldPositions.clear()
+        vertexPolygonClosed = false
+        vertexExtrudeHeight = 10f
+        verticesEditorActive = false
+        vertexPreviewModel?.dispose()
+        vertexPreviewModel = null
+        vertexPreviewInstance = null
+    }
+
     private fun isObjectInDistanceRange(objekt: Objekt): Boolean {
         if (noDistanceObjects) return true
         val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
@@ -411,12 +517,16 @@ class MyGdxGame (
         // Only clear depth buffer - ARCore camera background is already rendered
         Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT)
 
-        // Track which objects are polygon-based (should not render cube)
+        // Track which objects are polygon-based (should not render sphere)
         val polygonObjectIndices = personalBuildingObjectIndices.toSet()
 
         for((index, objekt) in objects.withIndex()){
-            // Skip cube rendering for polygon objects
+            // Skip sphere rendering for polygon objects
             if (index in polygonObjectIndices) {
+                objekt.visible = false
+                continue
+            }
+            if (objekt.hidden) {
                 objekt.visible = false
                 continue
             }
@@ -489,7 +599,7 @@ class MyGdxGame (
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         modelBatch!!.begin(cam)
-        // Render cube objects (non-polygon)
+        // Render sphere objects (non-polygon)
         for((index, instance) in instances.withIndex()) {
             if (index in polygonObjectIndices) continue
             if (index < objects.size && !objects[index].visible) continue
@@ -499,6 +609,7 @@ class MyGdxGame (
         for ((i, instance) in personalBuildingInstances.withIndex()) {
             val objIndex = personalBuildingObjectIndices[i]
             val objekt = objects[objIndex]
+            if (objekt.hidden) continue
             val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
             val dist = distance3D(camTranslatingVector, objektPos)
             if (!noDistanceObjects && dist !in minDistanceObjects..maxDistanceObjects) continue
@@ -511,7 +622,42 @@ class MyGdxGame (
                 modelBatch!!.render(instance, environment)
             }
         }
+        // Render vertex editor extruded preview
+        if (vertexPreviewInstance != null) {
+            modelBatch!!.render(vertexPreviewInstance, environment)
+        }
         modelBatch!!.end()
+
+        // Render vertex editor wireframe
+        if (verticesEditorActive && vertexWorldPositions.size >= 1) {
+            Gdx.gl.glLineWidth(3f)
+            shapeRenderer!!.projectionMatrix = cam!!.combined
+            shapeRenderer!!.begin(ShapeRenderer.ShapeType.Line)
+            // Draw lines between vertices
+            shapeRenderer!!.color = Color.GREEN
+            for (i in 0 until vertexWorldPositions.size - 1) {
+                val a = vertexWorldPositions[i]
+                val b = vertexWorldPositions[i + 1]
+                shapeRenderer!!.line(a, b)
+            }
+            // Draw closing line if polygon is closed
+            if (vertexPolygonClosed && vertexWorldPositions.size >= 3) {
+                val first = vertexWorldPositions.first()
+                val last = vertexWorldPositions.last()
+                shapeRenderer!!.line(last, first)
+            }
+            shapeRenderer!!.end()
+            // Draw vertex dots
+            shapeRenderer!!.begin(ShapeRenderer.ShapeType.Filled)
+            shapeRenderer!!.color = Color.YELLOW
+            for (pos in vertexWorldPositions) {
+                // Draw a small sphere-like dot by using a circle facing the camera
+                val screenPos = Vector3(pos)
+                cam!!.project(screenPos)
+                // We'll use a simple approach: render a small box at each vertex position
+            }
+            shapeRenderer!!.end()
+        }
 
         batch!!.begin()
         try {
@@ -936,6 +1082,8 @@ class MyGdxGame (
         batch!!.dispose()
         mapSprite!!.texture.dispose()
         modelBatch!!.dispose()
+        shapeRenderer?.dispose()
+        vertexPreviewModel?.dispose()
         for(instance in instances){
             instance.model.dispose()
         }

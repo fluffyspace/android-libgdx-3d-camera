@@ -2,9 +2,18 @@ package com.mygdx.game.viewmodel
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+
+data class ARObjectInfo(
+    val index: Int,
+    val id: Int,
+    val name: String,
+    val distance: Float,
+    val hidden: Boolean
+)
 
 class ARViewModel : ViewModel() {
     var editModeVisible by mutableStateOf(false)
@@ -24,6 +33,11 @@ class ARViewModel : ViewModel() {
     // Settings panel
     var settingsExpanded by mutableStateOf(false)
 
+    // Object list panel
+    var objectListExpanded by mutableStateOf(false)
+    var objectList by mutableStateOf<List<ARObjectInfo>>(emptyList())
+        private set
+
     // Distance controls for personal objects
     var minDistanceObjects by mutableFloatStateOf(0f)
     var maxDistanceObjects by mutableFloatStateOf(1000f)
@@ -38,8 +52,21 @@ class ARViewModel : ViewModel() {
         MOVE, MOVE_VERTICAL, ROTATE, SCALE, ADJUST_HEIGHT
     }
 
+    enum class EditTab {
+        OBJECT_EDITOR, VERTICES_EDITOR
+    }
+
+    var selectedEditTab by mutableStateOf(EditTab.OBJECT_EDITOR)
+
+    fun selectEditTab(tab: EditTab) {
+        selectedEditTab = tab
+    }
+
     fun showEditMode(visible: Boolean) {
         editModeVisible = visible
+        if (!visible) {
+            selectedEditTab = EditTab.OBJECT_EDITOR
+        }
     }
 
     fun showSaveMenu(visible: Boolean) {
@@ -48,6 +75,14 @@ class ARViewModel : ViewModel() {
 
     fun toggleSettingsExpanded() {
         settingsExpanded = !settingsExpanded
+    }
+
+    fun toggleObjectList() {
+        objectListExpanded = !objectListExpanded
+    }
+
+    fun updateObjectList(objects: List<ARObjectInfo>) {
+        objectList = objects
     }
 
     fun updateOrientationDegrees(degrees: Float) {
@@ -60,5 +95,20 @@ class ARViewModel : ViewModel() {
 
     fun clearEditMode() {
         selectedEditMode = null
+    }
+
+    // Vertices editor state
+    var vertexCount by mutableIntStateOf(0)
+    var vertexPolygonClosed by mutableStateOf(false)
+    var vertexExtrudeHeight by mutableFloatStateOf(10f)
+    var verticesEditorActive by mutableStateOf(false)
+    var vertexHitStatus by mutableStateOf("")
+
+    fun resetVerticesEditor() {
+        vertexCount = 0
+        vertexPolygonClosed = false
+        vertexExtrudeHeight = 10f
+        verticesEditorActive = false
+        vertexHitStatus = ""
     }
 }

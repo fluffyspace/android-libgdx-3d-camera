@@ -20,4 +20,5 @@ data class Objekt(
     var polygonJson: String? = null,
     var heightMeters: Float = 10f,
     var minHeightMeters: Float = 0f,
+    var hidden: Boolean = false,
 )

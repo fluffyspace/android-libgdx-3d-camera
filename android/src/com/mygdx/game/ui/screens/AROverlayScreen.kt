@@ -13,14 +13,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -35,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -57,6 +64,14 @@ fun AROverlayScreen(
     onAdjustHeightClick: () -> Unit = {},
     onSaveClick: () -> Unit,
     onDiscardClick: () -> Unit,
+    onToggleHidden: (index: Int) -> Unit = {},
+    onEditObject: (index: Int) -> Unit = {},
+    onAddVertex: () -> Unit = {},
+    onUndoVertex: () -> Unit = {},
+    onClosePolygon: () -> Unit = {},
+    onVertexHeightChanged: (Float) -> Unit = {},
+    onCancelVertices: () -> Unit = {},
+    onSaveVertices: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -100,6 +115,19 @@ fun AROverlayScreen(
                 painter = painterResource(id = R.drawable.close),
                 contentDescription = "Close",
                 tint = Color.Black
+            )
+        }
+
+        // Crosshair at center when vertices editor tab is active
+        if (viewModel.editModeVisible && !viewModel.buildingSelected &&
+            viewModel.selectedEditTab == ARViewModel.EditTab.VERTICES_EDITOR) {
+            Icon(
+                painter = painterResource(id = R.drawable.crosshair),
+                contentDescription = "Crosshair",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp)
             )
         }
 
@@ -147,37 +175,143 @@ fun AROverlayScreen(
 
                 // Edit mode buttons
                 AnimatedVisibility(visible = viewModel.editModeVisible) {
-                    Row(modifier = Modifier.padding(start = 20.dp)) {
-                        if (viewModel.buildingSelected) {
+                    if (viewModel.buildingSelected) {
+                        Row(modifier = Modifier.padding(start = 20.dp)) {
                             EditModeButton(
                                 iconRes = R.drawable.altitude,
                                 isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.ADJUST_HEIGHT,
                                 onClick = onAdjustHeightClick
                             )
-                        } else {
-                            EditModeButton(
-                                iconRes = R.drawable.in_plane_move,
-                                isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE,
-                                onClick = onMoveClick
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            EditModeButton(
-                                iconRes = R.drawable.altitude,
-                                isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE_VERTICAL,
-                                onClick = onMoveVerticalClick
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            EditModeButton(
-                                iconRes = R.drawable.rotate,
-                                isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.ROTATE,
-                                onClick = onRotateClick
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            EditModeButton(
-                                iconRes = R.drawable.scale,
-                                isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.SCALE,
-                                onClick = onScaleClick
-                            )
+                        }
+                    } else {
+                        Column(modifier = Modifier.padding(start = 20.dp)) {
+                            // Tab bar
+                            Row {
+                                EditTabButton(
+                                    text = "Object",
+                                    isSelected = viewModel.selectedEditTab == ARViewModel.EditTab.OBJECT_EDITOR,
+                                    onClick = { viewModel.selectEditTab(ARViewModel.EditTab.OBJECT_EDITOR) }
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                EditTabButton(
+                                    text = "Vertices",
+                                    isSelected = viewModel.selectedEditTab == ARViewModel.EditTab.VERTICES_EDITOR,
+                                    onClick = { viewModel.selectEditTab(ARViewModel.EditTab.VERTICES_EDITOR) }
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            // Tab content
+                            when (viewModel.selectedEditTab) {
+                                ARViewModel.EditTab.OBJECT_EDITOR -> {
+                                    Row {
+                                        EditModeButton(
+                                            iconRes = R.drawable.in_plane_move,
+                                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE,
+                                            onClick = onMoveClick
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        EditModeButton(
+                                            iconRes = R.drawable.altitude,
+                                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.MOVE_VERTICAL,
+                                            onClick = onMoveVerticalClick
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        EditModeButton(
+                                            iconRes = R.drawable.rotate,
+                                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.ROTATE,
+                                            onClick = onRotateClick
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        EditModeButton(
+                                            iconRes = R.drawable.scale,
+                                            isSelected = viewModel.selectedEditMode == ARViewModel.EditMode.SCALE,
+                                            onClick = onScaleClick
+                                        )
+                                    }
+                                }
+                                ARViewModel.EditTab.VERTICES_EDITOR -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xCC1A1A1A))
+                                            .padding(8.dp)
+                                    ) {
+                                        // Status text
+                                        if (viewModel.vertexHitStatus.isNotEmpty()) {
+                                            Text(
+                                                viewModel.vertexHitStatus,
+                                                color = Color.White.copy(alpha = 0.7f),
+                                                fontSize = 11.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                        }
+                                        // Vertex count
+                                        Text(
+                                            "Vertices: ${viewModel.vertexCount}" +
+                                                if (viewModel.vertexPolygonClosed) " (closed)" else "",
+                                            color = Color.White,
+                                            fontSize = 12.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        // Add / Undo / Close buttons
+                                        Row {
+                                            VertexButton(
+                                                text = "+ Add",
+                                                enabled = !viewModel.vertexPolygonClosed,
+                                                onClick = onAddVertex
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            VertexButton(
+                                                text = "Undo",
+                                                enabled = viewModel.vertexCount > 0 && !viewModel.vertexPolygonClosed,
+                                                onClick = onUndoVertex
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            VertexButton(
+                                                text = "Close",
+                                                enabled = viewModel.vertexCount >= 3 && !viewModel.vertexPolygonClosed,
+                                                onClick = onClosePolygon
+                                            )
+                                        }
+                                        // Height slider when polygon is closed
+                                        if (viewModel.vertexPolygonClosed) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                "Height: ${viewModel.vertexExtrudeHeight.toInt()}m",
+                                                color = Color.White,
+                                                fontSize = 12.sp
+                                            )
+                                            Slider(
+                                                value = viewModel.vertexExtrudeHeight,
+                                                onValueChange = { onVertexHeightChanged(it) },
+                                                valueRange = 1f..100f,
+                                                modifier = Modifier.width(200.dp),
+                                                colors = SliderDefaults.colors(
+                                                    thumbColor = Color.White,
+                                                    activeTrackColor = Color.White,
+                                                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                                                )
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        // Cancel / Save
+                                        Row {
+                                            VertexButton(
+                                                text = "Cancel",
+                                                color = Color(0xFFFF6666),
+                                                onClick = onCancelVertices
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            VertexButton(
+                                                text = "Save",
+                                                color = Color(0xFF66FF66),
+                                                enabled = viewModel.vertexPolygonClosed,
+                                                onClick = onSaveVertices
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -212,6 +346,144 @@ fun AROverlayScreen(
                                 tint = Color.Black
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // Bottom right - Object list button + panel
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(10.dp),
+            verticalArrangement = Arrangement.Bottom,
+            horizontalAlignment = Alignment.End
+        ) {
+            // Object list panel (expands upward from button)
+            AnimatedVisibility(
+                visible = viewModel.objectListExpanded,
+                enter = expandVertically(expandFrom = Alignment.Bottom),
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom)
+            ) {
+                ObjectListPanel(
+                    objects = viewModel.objectList,
+                    onToggleHidden = onToggleHidden,
+                    onEdit = onEditObject
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // List button
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .background(
+                        if (viewModel.objectListExpanded) Color.Yellow else Color.White
+                    )
+                    .clickable { viewModel.toggleObjectList() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.list),
+                    contentDescription = "Object list",
+                    tint = Color.Black
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ObjectListPanel(
+    objects: List<com.mygdx.game.viewmodel.ARObjectInfo>,
+    onToggleHidden: (index: Int) -> Unit,
+    onEdit: (index: Int) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(300.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xCC1A1A1A))
+            .padding(8.dp)
+    ) {
+        Text(
+            "Objects",
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        if (objects.isEmpty()) {
+            Text(
+                "No objects",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(8.dp)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 300.dp)
+            ) {
+                items(objects) { obj ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Eye toggle
+                        IconButton(
+                            onClick = { onToggleHidden(obj.index) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(
+                                    id = if (obj.hidden) R.drawable.visibility_off
+                                    else R.drawable.visibility
+                                ),
+                                contentDescription = if (obj.hidden) "Show" else "Hide",
+                                tint = if (obj.hidden) Color.White.copy(alpha = 0.3f)
+                                else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Name + distance
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = obj.name.ifBlank { "Object #${obj.id}" },
+                                color = if (obj.hidden) Color.White.copy(alpha = 0.3f)
+                                else Color.White,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "%.0f m".format(obj.distance),
+                                color = if (obj.hidden) Color.White.copy(alpha = 0.2f)
+                                else Color.White.copy(alpha = 0.6f),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        // Edit button
+                        IconButton(
+                            onClick = { onEdit(obj.index) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.edit),
+                                contentDescription = "Edit",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    if (obj != objects.last()) {
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                     }
                 }
             }
@@ -317,6 +589,30 @@ private fun SettingsPanel(
 }
 
 @Composable
+private fun EditTabButton(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.3f))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (isSelected) Color.Black else Color.White,
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
 private fun EditModeButton(
     iconRes: Int,
     isSelected: Boolean,
@@ -333,6 +629,31 @@ private fun EditModeButton(
             painter = painterResource(id = iconRes),
             contentDescription = null,
             tint = Color.Black
+        )
+    }
+}
+
+@Composable
+private fun VertexButton(
+    text: String,
+    enabled: Boolean = true,
+    color: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (enabled) color.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = if (enabled) color else Color.White.copy(alpha = 0.3f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
         )
     }
 }

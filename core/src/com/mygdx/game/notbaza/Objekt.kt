@@ -24,5 +24,6 @@ data class Objekt(
     var polygon: List<LatLon>? = null,
     var heightMeters: Float = 10f,
     var minHeightMeters: Float = 0f,
+    var hidden: Boolean = false,
 )
 

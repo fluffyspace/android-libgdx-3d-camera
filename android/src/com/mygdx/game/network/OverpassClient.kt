@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.cos
+import kotlin.math.sqrt
 
 object OverpassClient {
 
@@ -72,6 +74,33 @@ object OverpassClient {
     suspend fun fetchBuildingAtPoint(lat: Double, lon: Double): Building? {
         val buildings = fetchBuildings(lat, lon, radiusMeters = 50)
         return buildings.firstOrNull { pointInPolygon(lat, lon, it.polygon) }
+    }
+
+    fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val avgLat = Math.toRadians((lat1 + lat2) / 2.0)
+        val x = dLon * cos(avgLat)
+        return sqrt(x * x + dLat * dLat) * 6_371_000.0
+    }
+
+    fun buildingCentroid(polygon: List<LatLon>): LatLon {
+        val avgLat = polygon.map { it.lat }.average()
+        val avgLon = polygon.map { it.lon }.average()
+        return LatLon(avgLat, avgLon)
+    }
+
+    suspend fun fetchBuildingsNearPoint(
+        lat: Double,
+        lon: Double,
+        radiusMeters: Int = 50
+    ): List<Pair<Building, Double>> {
+        val buildings = fetchBuildings(lat, lon, radiusMeters)
+        return buildings.map { building ->
+            val centroid = buildingCentroid(building.polygon)
+            val dist = distanceMeters(lat, lon, centroid.lat, centroid.lon)
+            building to dist
+        }.sortedBy { it.second }
     }
 
     fun pointInPolygon(lat: Double, lon: Double, polygon: List<LatLon>): Boolean {

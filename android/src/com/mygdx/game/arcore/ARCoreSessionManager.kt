@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
+import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -282,6 +283,7 @@ class ARCoreSessionManager(private val activity: Activity) {
      */
     fun setDisplayGeometry(rotation: Int, width: Int, height: Int) {
         session?.setDisplayGeometry(rotation, width, height)
+        updateDisplayDimensions(width, height)
     }
 
     /**
@@ -298,4 +300,71 @@ class ARCoreSessionManager(private val activity: Activity) {
      * Check if the texture has been set and the session is ready for updates.
      */
     fun isReadyForUpdate(): Boolean = textureSet && session != null
+
+    // Display dimensions for hit testing
+    private var displayWidth = 0
+    private var displayHeight = 0
+
+    /**
+     * Enable ARCore plane detection (needed for vertices editor hit tests).
+     */
+    fun enablePlaneDetection() {
+        val currentSession = session ?: return
+        val config = Config(currentSession)
+        config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+        config.depthMode = Config.DepthMode.DISABLED
+        config.focusMode = Config.FocusMode.AUTO
+        config.geospatialMode = Config.GeospatialMode.DISABLED
+        currentSession.configure(config)
+        Log.d(TAG, "Plane detection enabled")
+    }
+
+    /**
+     * Disable ARCore plane detection (restore default state).
+     */
+    fun disablePlaneDetection() {
+        val currentSession = session ?: return
+        val config = Config(currentSession)
+        config.planeFindingMode = Config.PlaneFindingMode.DISABLED
+        config.depthMode = Config.DepthMode.DISABLED
+        config.focusMode = Config.FocusMode.AUTO
+        config.geospatialMode = Config.GeospatialMode.DISABLED
+        currentSession.configure(config)
+        Log.d(TAG, "Plane detection disabled")
+    }
+
+    /**
+     * Update stored display dimensions (called from setDisplayGeometry).
+     */
+    fun updateDisplayDimensions(width: Int, height: Int) {
+        displayWidth = width
+        displayHeight = height
+    }
+
+    /**
+     * Perform a hit test at screen center against detected ARCore planes.
+     * @return [x, y, z] in ARCore world coordinates, or null if no plane was hit.
+     */
+    fun hitTestCenter(): FloatArray? {
+        val currentFrame = frame ?: return null
+        if (currentFrame.camera.trackingState != TrackingState.TRACKING) return null
+        if (displayWidth == 0 || displayHeight == 0) return null
+
+        val centerX = displayWidth / 2f
+        val centerY = displayHeight / 2f
+
+        try {
+            val hitResults = currentFrame.hitTest(centerX, centerY)
+            for (hit in hitResults) {
+                val trackable = hit.trackable
+                if (trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)) {
+                    val pose = hit.hitPose
+                    return floatArrayOf(pose.tx(), pose.ty(), pose.tz())
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Hit test failed", e)
+        }
+        return null
+    }
 }

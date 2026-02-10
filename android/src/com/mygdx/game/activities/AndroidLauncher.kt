@@ -35,12 +35,14 @@ import com.mygdx.game.ui.screens.AROverlayScreen
 import com.mygdx.game.ui.theme.MyGdxGameTheme
 import com.mygdx.game.network.BuildingCache
 import com.mygdx.game.network.OverpassClient
+import com.mygdx.game.viewmodel.ARObjectInfo
 import com.mygdx.game.viewmodel.ARViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.sqrt
 
 class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
     // ARCore session manager (replaces HeadTracker)
@@ -81,6 +83,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
     lateinit var objects: MutableList<Objekt>
     lateinit var game: MyGdxGame
     lateinit var db: AppDatabase
+    val vertexLatLons: MutableList<LatLon> = mutableListOf()
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -118,6 +121,14 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                 lifecycleScope.launch(Dispatchers.Main) {
                     arViewModel.buildingSelected = game.selectedBuilding != -1
                     arViewModel.showEditMode(editModeEnabled)
+                    if (!editModeEnabled && arViewModel.verticesEditorActive) {
+                        vertexLatLons.clear()
+                        Gdx.app.postRunnable {
+                            game.clearVertexEditor()
+                            arCoreSessionManager.disablePlaneDetection()
+                        }
+                        arViewModel.resetVerticesEditor()
+                    }
                 }
             },
             { change ->
@@ -194,11 +205,19 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
         }
 
         orientationUpdateJob = lifecycleScope.launch(Dispatchers.IO) {
+            var objectListCounter = 0
             while (true) {
                 delay(50)
                 withContext(Dispatchers.Main) {
                     val degrees = arCoreSessionManager.headingDegrees.toFloat() + game.worldRotation + game.worldRotationTmp
                     arViewModel.updateOrientationDegrees(degrees)
+
+                    // Update object list every ~500ms (every 10 iterations)
+                    objectListCounter++
+                    if (objectListCounter >= 10 && arViewModel.objectListExpanded) {
+                        objectListCounter = 0
+                        updateObjectList()
+                    }
                 }
             }
         }
@@ -298,7 +317,113 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                             }
                         },
                         onSaveClick = { saveChanges() },
-                        onDiscardClick = { discardChanges() }
+                        onDiscardClick = { discardChanges() },
+                        onToggleHidden = { index -> toggleObjectHidden(index) },
+                        onEditObject = { index -> selectAndEditObject(index) },
+                        onAddVertex = {
+                            Gdx.app.postRunnable {
+                                if (!game.verticesEditorActive) {
+                                    arCoreSessionManager.enablePlaneDetection()
+                                    game.verticesEditorActive = true
+                                    lifecycleScope.launch(Dispatchers.Main) {
+                                        arViewModel.verticesEditorActive = true
+                                    }
+                                }
+                                val hitResult = arCoreSessionManager.hitTestCenter()
+                                if (hitResult != null) {
+                                    val latLon = game.arHitToGeo(hitResult[0], hitResult[1], hitResult[2])
+                                    vertexLatLons.add(latLon)
+                                    game.updateVertexPositions(vertexLatLons)
+                                    lifecycleScope.launch(Dispatchers.Main) {
+                                        arViewModel.vertexCount = vertexLatLons.size
+                                        arViewModel.vertexHitStatus = "Vertex ${vertexLatLons.size} added"
+                                    }
+                                } else {
+                                    lifecycleScope.launch(Dispatchers.Main) {
+                                        arViewModel.vertexHitStatus = "No surface detected yet"
+                                    }
+                                }
+                            }
+                        },
+                        onUndoVertex = {
+                            if (vertexLatLons.isNotEmpty()) {
+                                vertexLatLons.removeAt(vertexLatLons.lastIndex)
+                                Gdx.app.postRunnable {
+                                    game.vertexPolygonClosed = false
+                                    game.updateVertexPositions(vertexLatLons)
+                                }
+                                arViewModel.vertexCount = vertexLatLons.size
+                                arViewModel.vertexPolygonClosed = false
+                                arViewModel.vertexHitStatus = if (vertexLatLons.isEmpty()) "" else "Vertex removed"
+                            }
+                        },
+                        onClosePolygon = {
+                            if (vertexLatLons.size >= 3) {
+                                Gdx.app.postRunnable {
+                                    game.vertexPolygonClosed = true
+                                    game.updateVertexPositions(vertexLatLons)
+                                }
+                                arViewModel.vertexPolygonClosed = true
+                                arViewModel.vertexHitStatus = "Polygon closed"
+                            }
+                        },
+                        onVertexHeightChanged = { height ->
+                            arViewModel.vertexExtrudeHeight = height
+                            Gdx.app.postRunnable {
+                                game.vertexExtrudeHeight = height
+                                game.updateVertexPositions(vertexLatLons)
+                            }
+                        },
+                        onCancelVertices = {
+                            vertexLatLons.clear()
+                            Gdx.app.postRunnable {
+                                game.clearVertexEditor()
+                                arCoreSessionManager.disablePlaneDetection()
+                            }
+                            arViewModel.resetVerticesEditor()
+                        },
+                        onSaveVertices = {
+                            if (game.selectedObject >= 0 && game.selectedObject < game.objects.size && vertexLatLons.size >= 3) {
+                                val objekt = game.objects[game.selectedObject]
+                                val polygonJson = gson.toJson(vertexLatLons)
+                                val height = arViewModel.vertexExtrudeHeight
+
+                                // Update runtime object
+                                objekt.polygon = vertexLatLons.toList()
+                                objekt.polygonJson = polygonJson
+                                objekt.heightMeters = height
+                                objekt.minHeightMeters = 0f
+
+                                // Save to Room DB
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    db.objektDao().update(
+                                        com.mygdx.game.baza.Objekt(
+                                            objekt.id,
+                                            objekt.x, objekt.y, objekt.z,
+                                            objekt.name, objekt.size,
+                                            objekt.rotationX, objekt.rotationY, objekt.rotationZ,
+                                            objekt.color,
+                                            objekt.osmId,
+                                            polygonJson,
+                                            height,
+                                            0f,
+                                            objekt.hidden
+                                        )
+                                    )
+                                }
+
+                                // Recreate building mesh + clean up on GL thread
+                                Gdx.app.postRunnable {
+                                    game.clearVertexEditor()
+                                    arCoreSessionManager.disablePlaneDetection()
+                                    game.createInstances()
+                                }
+
+                                vertexLatLons.clear()
+                                arViewModel.resetVerticesEditor()
+                                arViewModel.selectEditTab(ARViewModel.EditTab.OBJECT_EDITOR)
+                            }
+                        }
                     )
                 }
             }
@@ -375,6 +500,54 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
         }
     }
 
+    private fun updateObjectList() {
+        val camPos = game.camTranslatingVector
+        val infos = game.objects.mapIndexed { index, objekt ->
+            val objPos = com.badlogic.gdx.math.Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+            val dx = objPos.x - camPos.x
+            val dy = objPos.y - camPos.y
+            val dz = objPos.z - camPos.z
+            val dist = sqrt(dx * dx + dy * dy + dz * dz)
+            ARObjectInfo(
+                index = index,
+                id = objekt.id,
+                name = objekt.name,
+                distance = dist,
+                hidden = objekt.hidden
+            )
+        }.sortedBy { it.distance }
+        arViewModel.updateObjectList(infos)
+    }
+
+    private fun toggleObjectHidden(index: Int) {
+        if (index < 0 || index >= game.objects.size) return
+        val objekt = game.objects[index]
+        objekt.hidden = !objekt.hidden
+        // Persist to Room
+        lifecycleScope.launch(Dispatchers.IO) {
+            db.objektDao().updateHidden(objekt.id, objekt.hidden)
+        }
+        // Refresh the list immediately
+        updateObjectList()
+    }
+
+    private fun selectAndEditObject(index: Int) {
+        if (index < 0 || index >= game.objects.size) return
+        // Close the object list
+        arViewModel.objectListExpanded = false
+        // Select the object on the GL thread
+        Gdx.app.postRunnable {
+            game.unselectObject()
+            game.unselectBuilding()
+            game.selectedObject = index
+            game.objects[index].let { objekt ->
+                game.instances[index] = com.badlogic.gdx.graphics.g3d.ModelInstance(game.selectedModel)
+                game.updateModel(index)
+            }
+            game.toggleEditMode(true)
+        }
+    }
+
     fun discardChanges() {
         lifecycleScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) {
@@ -406,7 +579,8 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                             objekt.osmId,
                             objekt.polygonJson,
                             objekt.heightMeters,
-                            objekt.minHeightMeters
+                            objekt.minHeightMeters,
+                            objekt.hidden
                         )
                     )
                 }
