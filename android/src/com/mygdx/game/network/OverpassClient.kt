@@ -25,13 +25,16 @@ object OverpassClient {
                 connection.connectTimeout = 15000
                 connection.readTimeout = 15000
 
+                NetworkLogger.logRequest(connection)
+                val startTime = System.currentTimeMillis()
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, response)
                 connection.disconnect()
 
                 val overpassResponse = Gson().fromJson(response, OverpassResponse::class.java)
                 overpassResponse.elements.mapNotNull { element -> parseBuilding(element) }
             } catch (e: Exception) {
-                e.printStackTrace()
+                NetworkLogger.logError(OVERPASS_URL, e)
                 emptyList()
             }
         }

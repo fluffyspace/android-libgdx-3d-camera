@@ -41,14 +41,18 @@ object OsmApiClient {
             connection.connectTimeout = 15000
             connection.readTimeout = 15000
 
+            NetworkLogger.logRequest(connection, xml)
+            val startTime = System.currentTimeMillis()
             OutputStreamWriter(connection.outputStream).use { it.write(xml) }
 
             if (connection.responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, response)
                 connection.disconnect()
                 response.trim().toLong()
             } else {
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, error)
                 connection.disconnect()
                 throw OsmApiException("Failed to create changeset: ${connection.responseCode} - $error")
             }
@@ -63,12 +67,16 @@ object OsmApiClient {
             connection.connectTimeout = 15000
             connection.readTimeout = 15000
 
+            NetworkLogger.logRequest(connection)
+            val startTime = System.currentTimeMillis()
             if (connection.responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, response)
                 connection.disconnect()
                 parseWayXml(response)
             } else {
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, error)
                 connection.disconnect()
                 throw OsmApiException("Failed to fetch way $wayId: ${connection.responseCode} - $error")
             }
@@ -106,14 +114,18 @@ object OsmApiClient {
             connection.connectTimeout = 15000
             connection.readTimeout = 15000
 
+            NetworkLogger.logRequest(connection, xml)
+            val startTime = System.currentTimeMillis()
             OutputStreamWriter(connection.outputStream).use { it.write(xml) }
 
             if (connection.responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, response)
                 connection.disconnect()
                 response.trim().toInt() // returns new version number
             } else {
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, error)
                 connection.disconnect()
                 throw OsmApiException("Failed to update way ${way.id}: ${connection.responseCode} - $error")
             }
@@ -129,11 +141,15 @@ object OsmApiClient {
             connection.connectTimeout = 15000
             connection.readTimeout = 15000
 
+            NetworkLogger.logRequest(connection)
+            val startTime = System.currentTimeMillis()
             if (connection.responseCode != 200) {
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, error)
                 connection.disconnect()
                 Log.e(TAG, "Failed to close changeset $changesetId: ${connection.responseCode} - $error")
             } else {
+                NetworkLogger.logResponse(connection, startTime)
                 connection.disconnect()
             }
         }

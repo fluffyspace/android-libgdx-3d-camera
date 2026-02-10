@@ -548,7 +548,14 @@ private fun SettingsPanel(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Buildings distance section
-        Text("Buildings", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text("Buildings (${viewModel.nearbyBuildingCount} fetched)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        if (viewModel.buildingFetchError != null) {
+            Text(
+                viewModel.buildingFetchError!!,
+                color = Color(0xFFFF6666),
+                fontSize = 11.sp
+            )
+        }
         Spacer(modifier = Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

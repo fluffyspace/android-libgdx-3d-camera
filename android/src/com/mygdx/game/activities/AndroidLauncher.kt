@@ -163,11 +163,13 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                 val userConverted = userBuildings.map { it.toBuilding() }
                 val merged = userConverted + filteredOsm
 
+                arViewModel.nearbyBuildingCount = merged.size
                 if (merged.isNotEmpty()) {
                     Gdx.app.postRunnable { game.setBuildings(merged) }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                arViewModel.buildingFetchError = "${e.javaClass.simpleName}: ${e.message}"
             }
         }
 

@@ -48,6 +48,10 @@ class ARViewModel : ViewModel() {
     var maxDistanceBuildings by mutableFloatStateOf(1000f)
     var noDistanceBuildings by mutableStateOf(false)
 
+    // Info
+    var nearbyBuildingCount by mutableIntStateOf(0)
+    var buildingFetchError by mutableStateOf<String?>(null)
+
     enum class EditMode {
         MOVE, MOVE_VERTICAL, ROTATE, SCALE, ADJUST_HEIGHT
     }

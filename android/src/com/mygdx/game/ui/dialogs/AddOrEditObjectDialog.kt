@@ -150,8 +150,32 @@ fun AddOrEditObjectDialog(
     var searchResults by remember { mutableStateOf<List<GeocodingResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
-    // OSM building state
-    var osmBuildingData by remember { mutableStateOf<OsmBuildingData?>(null) }
+    // OSM building state - restore from existing object when editing
+    var osmBuildingData by remember {
+        mutableStateOf(
+            objectToEdit?.let { obj ->
+                if (obj.osmId != null && obj.polygonJson != null) {
+                    val polygon = try {
+                        Gson().fromJson(
+                            obj.polygonJson,
+                            Array<com.mygdx.game.notbaza.LatLon>::class.java
+                        ).toList()
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (polygon != null) {
+                        OsmBuildingData(
+                            osmId = obj.osmId!!,
+                            polygonJson = obj.polygonJson!!,
+                            heightMeters = obj.heightMeters,
+                            minHeightMeters = obj.minHeightMeters,
+                            polygon = polygon
+                        )
+                    } else null
+                } else null
+            }
+        )
+    }
     var showBuildingMapPicker by remember { mutableStateOf(false) }
 
     // Convert existing color to hue, or use initial color, or default to 0 (red)

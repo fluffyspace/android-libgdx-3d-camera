@@ -81,10 +81,13 @@ class OsmAuthManager(context: Context, private val clientId: String) {
                         "&client_id=${URLEncoder.encode(clientId, "UTF-8")}" +
                         "&code_verifier=${URLEncoder.encode(codeVerifier, "UTF-8")}"
 
+                NetworkLogger.logRequest(connection, body)
+                val startTime = System.currentTimeMillis()
                 OutputStreamWriter(connection.outputStream).use { it.write(body) }
 
                 if (connection.responseCode == 200) {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    NetworkLogger.logResponse(connection, startTime, response)
                     connection.disconnect()
                     val json = JSONObject(response)
                     val accessToken = json.getString("access_token")
@@ -103,11 +106,13 @@ class OsmAuthManager(context: Context, private val clientId: String) {
                     true
                 } else {
                     val error = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                    NetworkLogger.logResponse(connection, startTime, error)
                     Log.e(TAG, "Token exchange failed: ${connection.responseCode} - $error")
                     connection.disconnect()
                     false
                 }
             } catch (e: Exception) {
+                NetworkLogger.logError(TOKEN_URL, e)
                 Log.e(TAG, "Token exchange error", e)
                 false
             }
@@ -115,24 +120,30 @@ class OsmAuthManager(context: Context, private val clientId: String) {
     }
 
     private fun fetchDisplayName(token: String): String? {
+        val urlStr = "$API_URL/api/0.6/user/details.json"
         return try {
-            val url = URL("$API_URL/api/0.6/user/details.json")
+            val url = URL(urlStr)
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.connectTimeout = 15000
             connection.readTimeout = 15000
 
+            NetworkLogger.logRequest(connection)
+            val startTime = System.currentTimeMillis()
             if (connection.responseCode == 200) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, response)
                 connection.disconnect()
                 val json = JSONObject(response)
                 json.getJSONObject("user").getString("display_name")
             } else {
+                NetworkLogger.logResponse(connection, startTime)
                 connection.disconnect()
                 null
             }
         } catch (e: Exception) {
+            NetworkLogger.logError(urlStr, e)
             Log.e(TAG, "Failed to fetch display name", e)
             null
         }

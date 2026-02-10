@@ -92,6 +92,7 @@ class MyGdxGame (
     var buildingInstances: MutableList<ModelInstance> = mutableListOf()
     var buildingModels: MutableList<Model> = mutableListOf()
     var buildingData: MutableList<Building> = mutableListOf()
+    private var buildingCentroids: MutableList<Vector3> = mutableListOf()
     private val buildingMeshGenerator = BuildingMeshGenerator()
     var buildingsVisible: Boolean = true
     var selectedBuilding = -1
@@ -228,6 +229,7 @@ class MyGdxGame (
         buildingModels.clear()
         buildingInstances.clear()
         buildingData.clear()
+        buildingCentroids.clear()
         selectedBuilding = -1
 
         for (building in newBuildings) {
@@ -237,6 +239,15 @@ class MyGdxGame (
                     buildingModels.add(model)
                     buildingInstances.add(ModelInstance(model))
                     buildingData.add(building)
+                    // Precompute centroid offset for distance filtering
+                    val centroidLat = building.polygon.map { it.lat }.average()
+                    val centroidLon = building.polygon.map { it.lon }.average()
+                    val centroidCart = geoToCartesian(centroidLat, centroidLon, 0.0)
+                    buildingCentroids.add(Vector3(
+                        centroidCart.x - cameraCartesian.x,
+                        centroidCart.z - cameraCartesian.z,
+                        centroidCart.y - cameraCartesian.y
+                    ))
                 }
             } catch (e: Exception) {
                 // Skip degenerate buildings
@@ -499,10 +510,9 @@ class MyGdxGame (
         return dist in minDistanceObjects..maxDistanceObjects
     }
 
-    private fun isBuildingInDistanceRange(instance: ModelInstance): Boolean {
+    private fun isBuildingInDistanceRange(buildingIndex: Int): Boolean {
         if (noDistanceBuildings) return true
-        val pos = Vector3()
-        instance.transform.getTranslation(pos)
+        val pos = buildingCentroids[buildingIndex]
         val dist = distance3D(camTranslatingVector, pos)
         return dist in minDistanceBuildings..maxDistanceBuildings
     }
@@ -617,8 +627,8 @@ class MyGdxGame (
         }
         // Render nearby buildings with distance filtering
         if (buildingsVisible) {
-            for (instance in buildingInstances) {
-                if (!isBuildingInDistanceRange(instance)) continue
+            for ((index, instance) in buildingInstances.withIndex()) {
+                if (!isBuildingInDistanceRange(index)) continue
                 modelBatch!!.render(instance, environment)
             }
         }

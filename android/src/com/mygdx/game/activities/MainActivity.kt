@@ -22,6 +22,7 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.gson.Gson
 import com.mygdx.game.baza.Objekt
+import com.mygdx.game.network.NetworkLogger
 import com.mygdx.game.ui.screens.MainScreen
 import com.mygdx.game.ui.theme.MyGdxGameTheme
 import com.mygdx.game.viewmodel.MainViewModel
@@ -259,12 +260,17 @@ class MainActivity : ComponentActivity() {
             var s3 = ""
             try {
                 val connection = URL(url).openConnection() as HttpURLConnection
+                NetworkLogger.logRequest(connection)
+                val startTime = System.currentTimeMillis()
                 val s = connection.inputStream.read()
                 val s2 = connection.url
                 s3 = s2.toString()
+                NetworkLogger.logResponse(connection, startTime, "Expanded URL: $s3")
             } catch (e: MalformedURLException) {
+                NetworkLogger.logError(url ?: "null", e)
                 e.printStackTrace()
             } catch (e: IOException) {
+                NetworkLogger.logError(url ?: "null", e)
                 e.printStackTrace()
             }
             return s3
