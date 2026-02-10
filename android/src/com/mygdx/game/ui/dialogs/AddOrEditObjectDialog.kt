@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,7 +36,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,14 +48,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.mygdx.game.BuildConfig
 import com.mygdx.game.baza.Objekt
-import com.mygdx.game.network.OverpassClient
-import com.mygdx.game.notbaza.Building
-import com.mygdx.game.ui.components.BuildingPreviewRenderer
+import com.mygdx.game.network.NetworkLogger
+import com.mygdx.game.ui.components.BuildingPreview3D
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,20 +92,25 @@ private suspend fun searchPlaces(query: String): List<GeocodingResult> {
     if (query.isBlank() || BuildConfig.MAPS_API_KEY.isBlank()) return emptyList()
 
     return withContext(Dispatchers.IO) {
+        val urlStr = "https://maps.googleapis.com/maps/api/geocode/json"
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = URL("https://maps.googleapis.com/maps/api/geocode/json?address=$encodedQuery&key=${BuildConfig.MAPS_API_KEY}")
+            val url = URL("$urlStr?address=$encodedQuery&key=${BuildConfig.MAPS_API_KEY}")
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
 
+            NetworkLogger.logRequest(connection)
+            val startTime = System.currentTimeMillis()
             val response = connection.inputStream.bufferedReader().use { it.readText() }
+            NetworkLogger.logResponse(connection, startTime, response)
             connection.disconnect()
 
             val geocodingResponse = Gson().fromJson(response, GeocodingResponse::class.java)
             geocodingResponse.results
         } catch (e: Exception) {
+            NetworkLogger.logError(urlStr, e)
             emptyList()
         }
     }
@@ -149,38 +152,7 @@ fun AddOrEditObjectDialog(
 
     // OSM building state
     var osmBuildingData by remember { mutableStateOf<OsmBuildingData?>(null) }
-    var osmSearchStatus by remember { mutableStateOf("") }
-    var isSearchingOsm by remember { mutableStateOf(false) }
-    var lastSearchedCoords by remember { mutableStateOf("") }
-    var nearbyBuildings by remember { mutableStateOf<List<BuildingWithDistance>>(emptyList()) }
-    var showBuildingPicker by remember { mutableStateOf(false) }
-
-    // Auto-fetch nearby OSM buildings when coordinates change
-    LaunchedEffect(coordinates) {
-        val parsed = parseCoordinatesLatLon(coordinates)
-        if (parsed != null && coordinates != lastSearchedCoords) {
-            lastSearchedCoords = coordinates
-            isSearchingOsm = true
-            osmSearchStatus = "Searching for buildings..."
-            osmBuildingData = null
-            nearbyBuildings = emptyList()
-            try {
-                val results = OverpassClient.fetchBuildingsNearPoint(parsed.first, parsed.second, 50)
-                if (results.isNotEmpty()) {
-                    nearbyBuildings = results.map { (building, dist) ->
-                        BuildingWithDistance(building, dist)
-                    }
-                    showBuildingPicker = true
-                    osmSearchStatus = "${results.size} building(s) found"
-                } else {
-                    osmSearchStatus = "No buildings found (will use sphere)"
-                }
-            } catch (_: Exception) {
-                osmSearchStatus = "OSM lookup failed (will use sphere)"
-            }
-            isSearchingOsm = false
-        }
-    }
+    var showBuildingMapPicker by remember { mutableStateOf(false) }
 
     // Convert existing color to hue, or use initial color, or default to 0 (red)
     var hue by remember {
@@ -203,27 +175,28 @@ fun AddOrEditObjectDialog(
 
     val previewColor = Color.hsv(hue, 1f, 1f)
 
-    // Building picker dialog
-    if (showBuildingPicker && nearbyBuildings.isNotEmpty()) {
-        BuildingPickerDialog(
-            buildings = nearbyBuildings,
-            colorHue = hue,
-            onSelect = { building ->
-                osmBuildingData = OsmBuildingData(
-                    osmId = building.id,
-                    polygonJson = Gson().toJson(building.polygon),
-                    heightMeters = building.heightMeters,
-                    minHeightMeters = building.minHeightMeters,
-                    polygon = building.polygon
-                )
-                osmSearchStatus = "Building selected (OSM #${building.id})"
-                showBuildingPicker = false
-            },
-            onSkip = {
-                osmSearchStatus = "No building selected (will use sphere)"
-                showBuildingPicker = false
-            }
-        )
+    // Building map picker dialog
+    if (showBuildingMapPicker) {
+        val parsed = parseCoordinatesLatLon(coordinates)
+        if (parsed != null) {
+            BuildingMapPickerDialog(
+                lat = parsed.first,
+                lon = parsed.second,
+                onSelect = { building ->
+                    osmBuildingData = OsmBuildingData(
+                        osmId = building.id,
+                        polygonJson = Gson().toJson(building.polygon),
+                        heightMeters = building.heightMeters,
+                        minHeightMeters = building.minHeightMeters,
+                        polygon = building.polygon
+                    )
+                    showBuildingMapPicker = false
+                },
+                onSkip = {
+                    showBuildingMapPicker = false
+                }
+            )
+        }
     }
 
     AlertDialog(
@@ -344,69 +317,46 @@ fun AddOrEditObjectDialog(
                     }
                 }
 
-                // OSM building status
-                if (osmSearchStatus.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isSearchingOsm) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 1.5.dp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        Text(
-                            text = osmSearchStatus,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 12.sp,
-                            color = if (osmBuildingData != null)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f, fill = false)
+                // OSM building status + pick button
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (osmBuildingData != null)
+                            "Building selected (OSM #${osmBuildingData!!.osmId})"
+                        else
+                            "No building selected",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 12.sp,
+                        color = if (osmBuildingData != null)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(
+                        onClick = { showBuildingMapPicker = true },
+                        enabled = parseCoordinatesLatLon(coordinates) != null,
+                        modifier = Modifier.height(28.dp),
+                        contentPadding = PaddingValues(
+                            horizontal = 8.dp, vertical = 0.dp
                         )
-                        if (!isSearchingOsm && nearbyBuildings.isNotEmpty()) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            TextButton(
-                                onClick = { showBuildingPicker = true },
-                                modifier = Modifier.height(28.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    horizontal = 8.dp, vertical = 0.dp
-                                )
-                            ) {
-                                Text(
-                                    text = if (osmBuildingData != null) "Change" else "Pick",
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
+                    ) {
+                        Text(
+                            text = if (osmBuildingData != null) "Change building" else "Pick building",
+                            fontSize = 12.sp
+                        )
                     }
                 }
 
                 // 3D building preview
                 if (osmBuildingData != null) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    val hsv = floatArrayOf(hue, 1f, 1f)
-                    val colorInt = AndroidColor.HSVToColor(hsv)
-                    val pR = android.graphics.Color.red(colorInt) / 255f
-                    val pG = android.graphics.Color.green(colorInt) / 255f
-                    val pB = android.graphics.Color.blue(colorInt) / 255f
-                    AndroidView(
-                        factory = { ctx ->
-                            BuildingPreviewRenderer(
-                                context = ctx,
-                                polygon = osmBuildingData!!.polygon,
-                                heightMeters = osmBuildingData!!.heightMeters,
-                                minHeightMeters = osmBuildingData!!.minHeightMeters,
-                                colorR = pR,
-                                colorG = pG,
-                                colorB = pB
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                    BuildingPreview3D(
+                        polygon = osmBuildingData!!.polygon,
+                        heightMeters = osmBuildingData!!.heightMeters,
+                        minHeightMeters = osmBuildingData!!.minHeightMeters,
+                        colorHue = hue
                     )
                 }
 
