@@ -145,13 +145,21 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
 
         // Fetch OSM building footprints + user buildings, merge them
         val cameraObj = gson.fromJson(cameraIntentExtra, Objekt::class.java)
+        OverpassClient.initMock(this) // TODO: remove mock
         val buildingCache = BuildingCache(applicationContext)
+        buildingCache.clearAll() // TODO: remove after stale empty cache is cleared
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val lat = cameraObj.x.toDouble()
                 val lon = cameraObj.y.toDouble()
-                val osmBuildings = buildingCache.getCached(lat, lon)
+                android.util.Log.d("BuildingFetch", "Starting fetch at lat=$lat, lon=$lon")
+
+                val cached = buildingCache.getCached(lat, lon)
+                android.util.Log.d("BuildingFetch", "Cache result: ${cached?.size ?: "null (cache miss)"}")
+
+                val osmBuildings = cached
                     ?: OverpassClient.fetchBuildings(lat, lon).also {
+                        android.util.Log.d("BuildingFetch", "Overpass returned ${it.size} buildings")
                         buildingCache.putCache(lat, lon, it)
                     }
 

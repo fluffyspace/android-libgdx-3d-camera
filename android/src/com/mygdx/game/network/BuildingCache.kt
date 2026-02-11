@@ -36,9 +36,14 @@ class BuildingCache(context: Context) {
     }
 
     fun putCache(lat: Double, lon: Double, buildings: List<Building>) {
+        if (buildings.isEmpty()) return
         val key = gridKey(lat, lon)
         val entry = CacheEntry(buildings, System.currentTimeMillis())
         prefs.edit().putString(key, gson.toJson(entry)).apply()
+    }
+
+    fun clearAll() {
+        prefs.edit().clear().apply()
     }
 
     private fun gridKey(lat: Double, lon: Double): String {

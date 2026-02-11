@@ -827,7 +827,8 @@ class MyGdxGame (
             dragTresholdOnAxisCheck()
         }
         if(draggingHorizontal) {
-            worldRotationTmp = -(Gdx.input.x - startTouch.x) / 10f
+            // Scale rotation so a full-screen swipe = 90 degrees (consistent across resolutions)
+            worldRotationTmp = -(Gdx.input.x - startTouch.x) * 90f / Gdx.graphics.width
         }
         // Vertical slide disabled - distance is determined by GPS coordinates only
     }
@@ -978,7 +979,7 @@ class MyGdxGame (
                 return
             }
             if(worldRotationTmp != 0f) {
-                worldRotation += worldRotationTmp
+                worldRotation = ((worldRotation + worldRotationTmp) % 360f + 360f) % 360f
                 worldRotationTmp = 0f
             } else if(selectedObject != -1 && modelMoving != null){
                 val myPoint = getObjectsXZAfterRot(objects[selectedObject])
