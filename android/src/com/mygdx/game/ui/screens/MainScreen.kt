@@ -8,15 +8,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -43,7 +40,6 @@ import com.mygdx.game.R
 import com.mygdx.game.baza.Objekt
 import com.mygdx.game.ui.components.ObjectListItem
 import com.mygdx.game.ui.dialogs.AddOrEditObjectDialog
-import com.mygdx.game.ui.dialogs.OsmBuildingData
 import com.mygdx.game.ui.dialogs.OsmUploadDialog
 import com.mygdx.game.viewmodel.MainViewModel
 
@@ -132,8 +128,20 @@ fun MainScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add object")
+            FloatingActionButton(
+                onClick = {
+                    val success = viewModel.setCameraFromText(coordinatesInput)
+                    if (!success) {
+                        onShowInvalidCoordinatesToast()
+                        return@FloatingActionButton
+                    }
+                    onOpenViewer(viewModel.camera.value, objects)
+                }
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.view_in_ar_fill0_wght400_grad0_opsz24),
+                    contentDescription = "AR View"
+                )
             }
         }
     ) { paddingValues ->
@@ -160,7 +168,6 @@ fun MainScreen(
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
-                Spacer(modifier = Modifier.width(8.dp))
                 IconButton(
                     onClick = {
                         onUpdateLocation { objekt ->
@@ -169,54 +176,41 @@ fun MainScreen(
                         }
                     }
                 ) {
-                    Icon(Icons.Default.LocationOn, contentDescription = "Get current location")
+                    Icon(
+                        painter = painterResource(id = R.drawable.my_location_fill0_wght400_grad0_opsz24),
+                        contentDescription = "Get current location"
+                    )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action buttons
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Button(
+                IconButton(
                     onClick = {
                         onUpdateLocation { objekt ->
                             onOpenMap(objekt)
                         }
-                    },
-                    modifier = Modifier.weight(1f)
+                    }
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.map_fill0_wght400_grad0_opsz24),
-                        contentDescription = null
+                        contentDescription = "Open map"
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Map")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        val success = viewModel.setCameraFromText(coordinatesInput)
-                        if (!success) {
-                            onShowInvalidCoordinatesToast()
-                            return@Button
-                        }
-                        onOpenViewer(viewModel.camera.value, objects)
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("AR View")
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Objects list
-            Text(
-                text = "Objects",
-                style = MaterialTheme.typography.titleMedium
-            )
+            // Objects list header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Objects",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                SmallFloatingActionButton(onClick = { showAddDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add object")
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
 
             if (objects.isEmpty()) {
@@ -227,7 +221,7 @@ fun MainScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No objects added yet.\nTap + to add your first object.",
+                        text = "No objects added yet.\nTap + above to add your first object.",
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

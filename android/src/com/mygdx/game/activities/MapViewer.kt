@@ -96,6 +96,7 @@ class MapViewer : ComponentActivity() {
                         }
                     },
                     pickMode = pickMode,
+                    onCancel = { finish() },
                     mapBuildingViewModel = mapBuildingViewModel,
                     osmBuildings = osmBuildings,
                     userBuildings = userBuildingsList,

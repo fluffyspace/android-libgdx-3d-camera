@@ -79,6 +79,7 @@ fun MapViewerScreen(
     onAddObject: (LatLng) -> Unit,
     onDeleteObject: (Int) -> Unit,
     pickMode: Boolean = false,
+    onCancel: () -> Unit = {},
     mapBuildingViewModel: MapBuildingViewModel? = null,
     osmBuildings: List<Building> = emptyList(),
     userBuildings: List<UserBuilding> = emptyList(),
@@ -317,18 +318,28 @@ fun MapViewerScreen(
                 tint = MaterialTheme.colorScheme.primary
             )
 
-            // Confirm button
-            FloatingActionButton(
-                onClick = {
-                    val centerLatLng = cameraPositionState.position.target
-                    onAddObject(centerLatLng)
-                },
+            // Cancel + Confirm buttons
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 32.dp)
+                    .padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Icon(Icons.Default.Check, contentDescription = "Confirm location")
+                FloatingActionButton(
+                    onClick = onCancel,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel")
+                }
+                FloatingActionButton(
+                    onClick = {
+                        val centerLatLng = cameraPositionState.position.target
+                        onAddObject(centerLatLng)
+                    }
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = "Confirm location")
+                }
             }
         }
 
