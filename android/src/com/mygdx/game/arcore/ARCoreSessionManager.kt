@@ -269,7 +269,7 @@ class ARCoreSessionManager(private val activity: Activity) {
         val currentFrame = frame
 
         if (currentFrame != null && currentFrame.camera.trackingState == TrackingState.TRACKING) {
-            currentFrame.camera.getProjectionMatrix(projMatrix, 0, 1f, 300f)
+            currentFrame.camera.getProjectionMatrix(projMatrix, 0, 0.5f, 10000f)
         } else {
             Matrix.setIdentityM(projMatrix, 0)
         }
@@ -305,32 +305,71 @@ class ARCoreSessionManager(private val activity: Activity) {
     private var displayWidth = 0
     private var displayHeight = 0
 
+    // Ref-counted plane detection: multiple features (floor grid, vertices editor) can
+    // request plane detection simultaneously; ARCore config is only toggled on 0<->1 transitions.
+    private var planeDetectionRefCount = 0
+
     /**
-     * Enable ARCore plane detection (needed for vertices editor hit tests).
+     * Enable ARCore plane detection (ref-counted).
+     * Multiple callers can request plane detection; it stays on until all disable.
      */
     fun enablePlaneDetection() {
-        val currentSession = session ?: return
-        val config = Config(currentSession)
-        config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-        config.depthMode = Config.DepthMode.DISABLED
-        config.focusMode = Config.FocusMode.AUTO
-        config.geospatialMode = Config.GeospatialMode.DISABLED
-        currentSession.configure(config)
-        Log.d(TAG, "Plane detection enabled")
+        planeDetectionRefCount++
+        if (planeDetectionRefCount == 1) {
+            applyPlaneDetection(true)
+        }
+        Log.d(TAG, "Plane detection enabled (refCount=$planeDetectionRefCount)")
     }
 
     /**
-     * Disable ARCore plane detection (restore default state).
+     * Disable ARCore plane detection (ref-counted).
+     * Only actually disables when all callers have released.
      */
     fun disablePlaneDetection() {
+        planeDetectionRefCount = (planeDetectionRefCount - 1).coerceAtLeast(0)
+        if (planeDetectionRefCount == 0) {
+            applyPlaneDetection(false)
+        }
+        Log.d(TAG, "Plane detection disabled (refCount=$planeDetectionRefCount)")
+    }
+
+    private fun applyPlaneDetection(enabled: Boolean) {
         val currentSession = session ?: return
         val config = Config(currentSession)
-        config.planeFindingMode = Config.PlaneFindingMode.DISABLED
+        config.planeFindingMode = if (enabled) Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+            else Config.PlaneFindingMode.DISABLED
         config.depthMode = Config.DepthMode.DISABLED
         config.focusMode = Config.FocusMode.AUTO
         config.geospatialMode = Config.GeospatialMode.DISABLED
         currentSession.configure(config)
-        Log.d(TAG, "Plane detection disabled")
+    }
+
+    /**
+     * Get height of camera above detected floor plane.
+     * Returns the distance in meters from the camera to the lowest horizontal-upward plane,
+     * or null if no floor plane is detected.
+     */
+    fun getFloorHeight(): Float? {
+        val currentSession = session ?: return null
+        val currentFrame = frame ?: return null
+        if (currentFrame.camera.trackingState != TrackingState.TRACKING) return null
+
+        val cameraPose = currentFrame.camera.pose
+        var lowestPlaneY = Float.MAX_VALUE
+        var found = false
+
+        for (plane in currentSession.getAllTrackables(Plane::class.java)) {
+            if (plane.trackingState != TrackingState.TRACKING) continue
+            if (plane.type != Plane.Type.HORIZONTAL_UPWARD_FACING) continue
+            val planeY = plane.centerPose.ty()
+            if (planeY < lowestPlaneY) {
+                lowestPlaneY = planeY
+                found = true
+            }
+        }
+
+        if (!found) return null
+        return cameraPose.ty() - lowestPlaneY
     }
 
     /**

@@ -28,6 +28,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -72,6 +75,9 @@ fun AROverlayScreen(
     onVertexHeightChanged: (Float) -> Unit = {},
     onCancelVertices: () -> Unit = {},
     onSaveVertices: () -> Unit = {},
+    onFloorGridToggle: (Boolean) -> Unit = {},
+    onAutoAdjustAltitude: () -> Unit = {},
+    onHeightOffsetChanged: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -149,7 +155,10 @@ fun AROverlayScreen(
                     onObjectDistanceChanged = onObjectDistanceChanged,
                     onBuildingDistanceChanged = onBuildingDistanceChanged,
                     onNoDistanceObjectsToggle = onNoDistanceObjectsToggle,
-                    onNoDistanceBuildingsToggle = onNoDistanceBuildingsToggle
+                    onNoDistanceBuildingsToggle = onNoDistanceBuildingsToggle,
+                    onFloorGridToggle = onFloorGridToggle,
+                    onAutoAdjustAltitude = onAutoAdjustAltitude,
+                    onHeightOffsetChanged = onHeightOffsetChanged
                 )
             }
 
@@ -351,6 +360,29 @@ fun AROverlayScreen(
             }
         }
 
+        // Bottom center - Altitude HUD
+        if (viewModel.floorGridEnabled || viewModel.altitudeAutoAdjusted) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 70.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0x99000000))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                val hudText = if (viewModel.altitudeAutoAdjusted) {
+                    "Alt: ${"%.1f".format(viewModel.computeAltitude())}m ASL"
+                } else {
+                    "Floor: ${"%.1f".format(viewModel.floorHeightLive)}m below phone"
+                }
+                Text(
+                    hudText,
+                    color = Color.White,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
         // Bottom right - Object list button + panel
         Column(
             modifier = Modifier
@@ -497,7 +529,10 @@ private fun SettingsPanel(
     onObjectDistanceChanged: (min: Float, max: Float) -> Unit,
     onBuildingDistanceChanged: (min: Float, max: Float) -> Unit,
     onNoDistanceObjectsToggle: (Boolean) -> Unit,
-    onNoDistanceBuildingsToggle: (Boolean) -> Unit
+    onNoDistanceBuildingsToggle: (Boolean) -> Unit,
+    onFloorGridToggle: (Boolean) -> Unit,
+    onAutoAdjustAltitude: () -> Unit,
+    onHeightOffsetChanged: (Float) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -507,7 +542,7 @@ private fun SettingsPanel(
             .padding(12.dp)
     ) {
         // Objects distance section
-        Text("Objects", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text("Objects (${viewModel.personalObjectCount} loaded)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -590,6 +625,112 @@ private fun SettingsPanel(
                     activeTrackColor = Color.White,
                     inactiveTrackColor = Color.White.copy(alpha = 0.3f)
                 )
+            )
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Floor Grid section
+        Text("Floor Grid", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Show detected floor", color = Color.White, fontSize = 12.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            Switch(
+                checked = viewModel.floorGridEnabled,
+                onCheckedChange = { onFloorGridToggle(it) },
+                modifier = Modifier.height(24.dp),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.Yellow,
+                    checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
+                )
+            )
+        }
+        if (viewModel.floorGridEnabled && viewModel.floorHeightLive > 0f) {
+            Text(
+                "Phone height: ${"%.1f".format(viewModel.floorHeightLive)}m above floor",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 11.sp
+            )
+            if (viewModel.altitudeAutoAdjusted) {
+                Text(
+                    "Floor at ${"%.1f".format(viewModel.groundElevation + viewModel.heightOffset)}m ASL",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Altitude section
+        Text("Altitude", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(4.dp))
+        if (viewModel.isAutoAdjusting) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Adjusting...", color = Color.White, fontSize = 12.sp)
+            }
+        } else if (viewModel.altitudeAutoAdjusted) {
+            Button(
+                onClick = onAutoAdjustAltitude,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF4CAF50)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Altitude set (${"%.1f".format(viewModel.computeAltitude())}m)",
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+            }
+        } else {
+            Button(
+                onClick = onAutoAdjustAltitude,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.2f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Auto-adjust altitude", color = Color.White, fontSize = 12.sp)
+            }
+        }
+        if (viewModel.autoAdjustError != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                viewModel.autoAdjustError!!,
+                color = Color(0xFFFF6666),
+                fontSize = 11.sp
+            )
+        }
+        if (viewModel.altitudeAutoAdjusted) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                "Floor offset: ${viewModel.heightOffset.toInt()}m",
+                color = Color.White,
+                fontSize = 12.sp
+            )
+            Slider(
+                value = viewModel.heightOffset,
+                onValueChange = { onHeightOffsetChanged(it) },
+                valueRange = -20f..20f,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                )
+            )
+            Text(
+                "Camera altitude: ${"%.1f".format(viewModel.computeAltitude())}m ASL",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 11.sp
             )
         }
     }

@@ -34,6 +34,7 @@ import com.mygdx.game.overr.AndroidApplicationOverrided
 import com.mygdx.game.ui.screens.AROverlayScreen
 import com.mygdx.game.ui.theme.MyGdxGameTheme
 import com.mygdx.game.network.BuildingCache
+import com.mygdx.game.network.ElevationClient
 import com.mygdx.game.network.OverpassClient
 import com.mygdx.game.viewmodel.ARObjectInfo
 import com.mygdx.game.viewmodel.ARViewModel
@@ -141,6 +142,8 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
         initialize(game, config)
         initializeLayouts()
 
+        arViewModel.personalObjectCount = objects.size
+
         db = AppDatabase.getInstance(applicationContext)
 
         // Fetch OSM building footprints + user buildings, merge them
@@ -218,6 +221,16 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
             var objectListCounter = 0
             while (true) {
                 delay(50)
+
+                // Update floor height from ARCore (on IO thread, reading ARCore state)
+                if (arViewModel.floorGridEnabled) {
+                    val fh = arCoreSessionManager.getFloorHeight()
+                    if (fh != null) {
+                        Gdx.app.postRunnable { game.floorHeight = fh }
+                        arViewModel.floorHeightLive = fh
+                    }
+                }
+
                 withContext(Dispatchers.Main) {
                     val degrees = arCoreSessionManager.headingDegrees.toFloat() + game.worldRotation + game.worldRotationTmp
                     arViewModel.updateOrientationDegrees(degrees)
@@ -432,6 +445,88 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                                 vertexLatLons.clear()
                                 arViewModel.resetVerticesEditor()
                                 arViewModel.selectEditTab(ARViewModel.EditTab.OBJECT_EDITOR)
+                            }
+                        },
+                        onFloorGridToggle = { enabled ->
+                            arViewModel.floorGridEnabled = enabled
+                            Gdx.app.postRunnable {
+                                game.showFloorGrid = enabled
+                                if (!enabled) {
+                                    game.floorHeight = 0f
+                                }
+                            }
+                            if (enabled) {
+                                arCoreSessionManager.enablePlaneDetection()
+                            } else {
+                                arCoreSessionManager.disablePlaneDetection()
+                                arViewModel.floorHeightLive = 0f
+                            }
+                        },
+                        onAutoAdjustAltitude = {
+                            arViewModel.isAutoAdjusting = true
+                            arViewModel.autoAdjustError = null
+                            // Enable plane detection if not already on
+                            val needPlanes = !arViewModel.floorGridEnabled
+                            if (needPlanes) arCoreSessionManager.enablePlaneDetection()
+
+                            lifecycleScope.launch {
+                                try {
+                                    // Fetch ground elevation
+                                    val lat = game.camera.x.toDouble()
+                                    val lon = game.camera.y.toDouble()
+                                    val elevation = ElevationClient.fetchElevation(lat, lon)
+                                    arViewModel.groundElevation = elevation
+
+                                    // Wait briefly if plane detection was just enabled
+                                    if (needPlanes) delay(2000)
+
+                                    // Get phone height from ARCore
+                                    val phoneH = arCoreSessionManager.getFloorHeight()
+                                    if (phoneH == null) {
+                                        arViewModel.autoAdjustError = "No floor detected. Point camera at floor."
+                                        arViewModel.isAutoAdjusting = false
+                                        if (needPlanes) arCoreSessionManager.disablePlaneDetection()
+                                        return@launch
+                                    }
+                                    arViewModel.phoneHeight = phoneH
+
+                                    // Compute and apply new camera altitude
+                                    val newAlt = arViewModel.computeAltitude()
+                                    arViewModel.altitudeAutoAdjusted = true
+                                    arViewModel.isAutoAdjusting = false
+
+                                    // Update game camera on GL thread
+                                    Gdx.app.postRunnable {
+                                        game.camera.z = newAlt
+                                        game.cameraCartesian = game.geoToCartesian(
+                                            game.camera.x.toDouble(),
+                                            game.camera.y.toDouble(),
+                                            game.camera.z.toDouble()
+                                        )
+                                        game.createInstances()
+                                    }
+
+                                    if (needPlanes) arCoreSessionManager.disablePlaneDetection()
+                                } catch (e: Exception) {
+                                    arViewModel.autoAdjustError = "${e.javaClass.simpleName}: ${e.message}"
+                                    arViewModel.isAutoAdjusting = false
+                                    if (needPlanes) arCoreSessionManager.disablePlaneDetection()
+                                }
+                            }
+                        },
+                        onHeightOffsetChanged = { offset ->
+                            arViewModel.heightOffset = offset
+                            if (arViewModel.altitudeAutoAdjusted) {
+                                val newAlt = arViewModel.computeAltitude()
+                                Gdx.app.postRunnable {
+                                    game.camera.z = newAlt
+                                    game.cameraCartesian = game.geoToCartesian(
+                                        game.camera.x.toDouble(),
+                                        game.camera.y.toDouble(),
+                                        game.camera.z.toDouble()
+                                    )
+                                    game.createInstances()
+                                }
                             }
                         }
                     )

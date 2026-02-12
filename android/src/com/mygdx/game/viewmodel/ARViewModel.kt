@@ -49,8 +49,23 @@ class ARViewModel : ViewModel() {
     var noDistanceBuildings by mutableStateOf(false)
 
     // Info
+    var personalObjectCount by mutableIntStateOf(0)
     var nearbyBuildingCount by mutableIntStateOf(0)
     var buildingFetchError by mutableStateOf<String?>(null)
+
+    // Floor grid
+    var floorGridEnabled by mutableStateOf(false)
+    var floorHeightLive by mutableFloatStateOf(0f)
+
+    // Altitude auto-adjust
+    var altitudeAutoAdjusted by mutableStateOf(false)
+    var heightOffset by mutableFloatStateOf(0f)
+    var groundElevation by mutableFloatStateOf(0f)
+    var phoneHeight by mutableFloatStateOf(0f)
+    var isAutoAdjusting by mutableStateOf(false)
+    var autoAdjustError by mutableStateOf<String?>(null)
+
+    fun computeAltitude(): Float = groundElevation + phoneHeight + heightOffset
 
     enum class EditMode {
         MOVE, MOVE_VERTICAL, ROTATE, SCALE, ADJUST_HEIGHT

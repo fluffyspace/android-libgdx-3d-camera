@@ -17,8 +17,10 @@ import com.badlogic.gdx.graphics.g3d.Material
 import com.badlogic.gdx.graphics.g3d.Model
 import com.badlogic.gdx.graphics.g3d.ModelBatch
 import com.badlogic.gdx.graphics.g3d.ModelInstance
+import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight
+import com.badlogic.gdx.graphics.g3d.utils.MeshPartBuilder
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Intersector
@@ -78,6 +80,7 @@ class MyGdxGame (
     var text: String? = null
     var fontCaches: MutableList<BitmapFontCache> = mutableListOf()
     var noRender: Boolean = false
+    private var debugFrameCounter = 0
 
     // Dual distance controls
     var minDistanceObjects = 0f
@@ -113,6 +116,13 @@ class MyGdxGame (
     var verticesEditorActive: Boolean = false
     private var vertexPreviewModel: Model? = null
     private var vertexPreviewInstance: ModelInstance? = null
+
+    // Floor grid
+    var showFloorGrid: Boolean = false
+    var floorHeight: Float = 0f
+    private var floorGridModel: Model? = null
+    private var floorGridInstance: ModelInstance? = null
+    private var lastFloorGridHeight: Float = -1f
 
     data class MyPoint(var x: Float = 0f, var y: Float = 0f)
     data class MyPolar(var radius: Float = 0f, var degrees: Float = 0f)
@@ -162,8 +172,8 @@ class MyGdxGame (
         cam = PerspectiveCamera(81f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
         cam!!.position.set(Vector3(0f, 0f, 0f))
         cam!!.lookAt(1f, 0f, 0f)
-        cam!!.near = 1f
-        cam!!.far = 300f
+        cam!!.near = 0.5f
+        cam!!.far = 10000f
         cam!!.update()
         environment = Environment()
         environment!!.set(ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f))
@@ -194,10 +204,13 @@ class MyGdxGame (
         personalBuildingModels.clear()
         personalBuildingObjectIndices.clear()
         updateObjectsCoordinates()
+        println("ObjectDebug: createInstances() total objects=${objects.size}, camera=(${camera.x}, ${camera.y}, ${camera.z})")
         for((index, objekt) in objects.withIndex()){
-            println("ingo Dobio sam $objekt i ")
+            val dist = distance3D(Vector3(), Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
+            val hasPolygon = objekt.polygon != null && objekt.polygon!!.size >= 3
+            println("ObjectDebug: [$index] name='${objekt.name}' pos=(${objekt.x},${objekt.y},${objekt.z}) diff=(${objekt.diffX},${objekt.diffY},${objekt.diffZ}) dist=${dist}m polygon=$hasPolygon hidden=${objekt.hidden}")
             fontCaches.add(BitmapFontCache(font, false))
-            if (objekt.polygon != null && objekt.polygon!!.size >= 3) {
+            if (hasPolygon) {
                 // Polygon object: create building mesh with user color
                 val building = Building(
                     id = objekt.osmId ?: 0L,
@@ -211,6 +224,9 @@ class MyGdxGame (
                     personalBuildingModels.add(model)
                     personalBuildingInstances.add(ModelInstance(model))
                     personalBuildingObjectIndices.add(index)
+                    println("ObjectDebug: [$index] polygon mesh generated OK")
+                } else {
+                    println("ObjectDebug: [$index] polygon mesh generation FAILED")
                 }
                 // Still add a sphere instance (invisible/placeholder) so indices stay aligned
                 instances.add(ModelInstance(generateModelForObject(objekt.libgdxcolor)))
@@ -220,6 +236,7 @@ class MyGdxGame (
                 updateModel(instances.lastIndex)
             }
         }
+        println("ObjectDebug: createInstances() done: ${instances.size} sphere instances, ${personalBuildingInstances.size} polygon instances")
     }
     fun setBuildings(newBuildings: List<Building>) {
         // Dispose old building models
@@ -503,6 +520,53 @@ class MyGdxGame (
         vertexPreviewInstance = null
     }
 
+    private fun updateFloorGrid() {
+        if (!showFloorGrid || floorHeight <= 0f) {
+            floorGridInstance = null
+            return
+        }
+        // Only regenerate if height changed significantly
+        if (abs(floorHeight - lastFloorGridHeight) < 0.05f && floorGridInstance != null) return
+        lastFloorGridHeight = floorHeight
+
+        floorGridModel?.dispose()
+        floorGridModel = createFloorGridModel(-floorHeight)
+        floorGridInstance = ModelInstance(floorGridModel)
+    }
+
+    private fun createFloorGridModel(floorY: Float): Model {
+        val gridSize = 20f // 20m in each direction
+        val spacing = 1f   // 1m spacing
+        val gridColor = Color(1f, 1f, 1f, 0.35f)
+
+        val modelBuilder = ModelBuilder()
+        modelBuilder.begin()
+        val material = Material(
+            ColorAttribute.createDiffuse(gridColor),
+            BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        )
+        val mpb: MeshPartBuilder = modelBuilder.part(
+            "grid", GL20.GL_LINES,
+            (VertexAttributes.Usage.Position or VertexAttributes.Usage.Normal).toLong(),
+            material
+        )
+
+        // Lines along X axis (varying Z)
+        var z = -gridSize
+        while (z <= gridSize) {
+            mpb.line(-gridSize, floorY, z, gridSize, floorY, z)
+            z += spacing
+        }
+        // Lines along Z axis (varying X)
+        var x = -gridSize
+        while (x <= gridSize) {
+            mpb.line(x, floorY, -gridSize, x, floorY, gridSize)
+            x += spacing
+        }
+
+        return modelBuilder.end()
+    }
+
     private fun isObjectInDistanceRange(objekt: Objekt): Boolean {
         if (noDistanceObjects) return true
         val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
@@ -606,6 +670,22 @@ class MyGdxGame (
             }
         }
 
+        // Periodic debug log for object visibility
+        debugFrameCounter++
+        if (debugFrameCounter % 120 == 0) {
+            val visibleCount = objects.count { it.visible }
+            val hiddenCount = objects.count { it.hidden }
+            val polyCount = personalBuildingObjectIndices.size
+            println("ObjectDebug: render frame=$debugFrameCounter visible=$visibleCount/${objects.size} hidden=$hiddenCount polygon=$polyCount noDistLimit=$noDistanceObjects worldRot=$worldRotation")
+            for ((index, objekt) in objects.withIndex()) {
+                val dist = distance3D(camTranslatingVector, Vector3(objekt.diffX, objekt.diffY, objekt.diffZ))
+                val inFrustum = if (index < instances.size) isVisible(cam!!, index) else false
+                val inRange = isObjectInDistanceRange(objekt)
+                val isPoly = index in polygonObjectIndices
+                println("ObjectDebug:   [$index] '${objekt.name}' dist=${dist.toInt()}m frustum=$inFrustum range=$inRange visible=${objekt.visible} poly=$isPoly hidden=${objekt.hidden}")
+            }
+        }
+
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         modelBatch!!.begin(cam)
@@ -635,6 +715,11 @@ class MyGdxGame (
         // Render vertex editor extruded preview
         if (vertexPreviewInstance != null) {
             modelBatch!!.render(vertexPreviewInstance, environment)
+        }
+        // Render floor grid
+        updateFloorGrid()
+        if (floorGridInstance != null) {
+            modelBatch!!.render(floorGridInstance, environment)
         }
         modelBatch!!.end()
 
@@ -1095,6 +1180,7 @@ class MyGdxGame (
         modelBatch!!.dispose()
         shapeRenderer?.dispose()
         vertexPreviewModel?.dispose()
+        floorGridModel?.dispose()
         for(instance in instances){
             instance.model.dispose()
         }
