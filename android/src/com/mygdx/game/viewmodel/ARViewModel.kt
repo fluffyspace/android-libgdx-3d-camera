@@ -48,6 +48,9 @@ class ARViewModel : ViewModel() {
     var maxDistanceBuildings by mutableFloatStateOf(1000f)
     var noDistanceBuildings by mutableStateOf(false)
 
+    // Depth ordering
+    var objectsOnTop by mutableStateOf(true)
+
     // Info
     var personalObjectCount by mutableIntStateOf(0)
     var nearbyBuildingCount by mutableIntStateOf(0)

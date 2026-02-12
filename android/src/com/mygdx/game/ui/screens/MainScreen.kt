@@ -13,8 +13,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -74,6 +76,7 @@ fun MainScreen(
     var coordinatesInput by remember(cameraText) { mutableStateOf(cameraText) }
     var showOsmMenu by remember { mutableStateOf(false) }
     var showUploadDialog by remember { mutableStateOf(false) }
+    var objectToDelete by remember { mutableStateOf<Objekt?>(null) }
 
     // Show dialog with picked coordinates when returning from map
     var showDialogWithPickedCoords by remember { mutableStateOf(false) }
@@ -232,7 +235,7 @@ fun MainScreen(
                         ObjectListItem(
                             objekt = objekt,
                             onClick = { objectToEdit = objekt },
-                            onLongClick = { viewModel.deleteObject(objekt) }
+                            onLongClick = { objectToDelete = objekt }
                         )
                     }
                 }
@@ -313,6 +316,28 @@ fun MainScreen(
                     viewModel.updateObject(it)
                 }
                 objectToEdit = null
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    objectToDelete?.let { objekt ->
+        AlertDialog(
+            onDismissRequest = { objectToDelete = null },
+            title = { Text("Delete object") },
+            text = { Text("Delete \"${objekt.name}\"?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteObject(objekt)
+                    objectToDelete = null
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { objectToDelete = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }

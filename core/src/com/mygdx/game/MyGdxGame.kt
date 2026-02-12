@@ -98,6 +98,7 @@ class MyGdxGame (
     private var buildingCentroids: MutableList<Vector3> = mutableListOf()
     private val buildingMeshGenerator = BuildingMeshGenerator()
     var buildingsVisible: Boolean = true
+    var objectsOnTop: Boolean = true
     var selectedBuilding = -1
     var onBuildingChange: ((Building) -> Unit)? = null
     private var buildingHeightDragStart = 0f
@@ -107,6 +108,8 @@ class MyGdxGame (
     var personalBuildingInstances: MutableList<ModelInstance> = mutableListOf()
     var personalBuildingModels: MutableList<Model> = mutableListOf()
     var personalBuildingObjectIndices: MutableList<Int> = mutableListOf()
+    private var personalBuildingCentroids: MutableList<Vector3> = mutableListOf()
+    private val polygonLineHeight = 30f
 
     // Vertices editor state
     var shapeRenderer: ShapeRenderer? = null
@@ -203,6 +206,7 @@ class MyGdxGame (
         personalBuildingModels.forEach { it.dispose() }
         personalBuildingModels.clear()
         personalBuildingObjectIndices.clear()
+        personalBuildingCentroids.clear()
         updateObjectsCoordinates()
         println("ObjectDebug: createInstances() total objects=${objects.size}, camera=(${camera.x}, ${camera.y}, ${camera.z})")
         for((index, objekt) in objects.withIndex()){
@@ -224,6 +228,16 @@ class MyGdxGame (
                     personalBuildingModels.add(model)
                     personalBuildingInstances.add(ModelInstance(model))
                     personalBuildingObjectIndices.add(index)
+                    // Compute roof-level centroid for vertical line / label
+                    val centroidLat = objekt.polygon!!.map { it.lat }.average()
+                    val centroidLon = objekt.polygon!!.map { it.lon }.average()
+                    val roofAlt = (objekt.z + objekt.heightMeters).toDouble()
+                    val centroidCart = geoToCartesian(centroidLat, centroidLon, roofAlt)
+                    personalBuildingCentroids.add(Vector3(
+                        centroidCart.x - cameraCartesian.x,
+                        centroidCart.z - cameraCartesian.z,  // Y/Z swap
+                        centroidCart.y - cameraCartesian.y
+                    ))
                     println("ObjectDebug: [$index] polygon mesh generated OK")
                 } else {
                     println("ObjectDebug: [$index] polygon mesh generation FAILED")
@@ -595,9 +609,12 @@ class MyGdxGame (
         val polygonObjectIndices = personalBuildingObjectIndices.toSet()
 
         for((index, objekt) in objects.withIndex()){
-            // Skip sphere rendering for polygon objects
+            // Polygon objects: compute visibility but skip sphere rendering
             if (index in polygonObjectIndices) {
-                objekt.visible = false
+                objekt.visible = !objekt.hidden && isObjectInDistanceRange(objekt)
+                if (objekt.visible) {
+                    showPolygonObjectName(index)
+                }
                 continue
             }
             if (objekt.hidden) {
@@ -688,40 +705,60 @@ class MyGdxGame (
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        // === Pass 1: Nearby OSM buildings, vertex preview, floor grid (normal depth) ===
         modelBatch!!.begin(cam)
-        // Render sphere objects (non-polygon)
-        for((index, instance) in instances.withIndex()) {
-            if (index in polygonObjectIndices) continue
-            if (index < objects.size && !objects[index].visible) continue
-            modelBatch!!.render(instance, environment)
-        }
-        // Render personal polygon objects with distance filtering
-        for ((i, instance) in personalBuildingInstances.withIndex()) {
-            val objIndex = personalBuildingObjectIndices[i]
-            val objekt = objects[objIndex]
-            if (objekt.hidden) continue
-            val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
-            val dist = distance3D(camTranslatingVector, objektPos)
-            if (!noDistanceObjects && dist !in minDistanceObjects..maxDistanceObjects) continue
-            modelBatch!!.render(instance, environment)
-        }
-        // Render nearby buildings with distance filtering
         if (buildingsVisible) {
             for ((index, instance) in buildingInstances.withIndex()) {
                 if (!isBuildingInDistanceRange(index)) continue
                 modelBatch!!.render(instance, environment)
             }
         }
-        // Render vertex editor extruded preview
         if (vertexPreviewInstance != null) {
             modelBatch!!.render(vertexPreviewInstance, environment)
         }
-        // Render floor grid
         updateFloorGrid()
         if (floorGridInstance != null) {
             modelBatch!!.render(floorGridInstance, environment)
         }
         modelBatch!!.end()
+
+        // Clear depth so personal objects render on top of nearby buildings
+        if (objectsOnTop) {
+            Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT)
+        }
+
+        // === Pass 2: Personal objects (spheres + polygon buildings) ===
+        modelBatch!!.begin(cam)
+        for((index, instance) in instances.withIndex()) {
+            if (index in polygonObjectIndices) continue
+            if (index < objects.size && !objects[index].visible) continue
+            modelBatch!!.render(instance, environment)
+        }
+        for ((i, instance) in personalBuildingInstances.withIndex()) {
+            val objIndex = personalBuildingObjectIndices[i]
+            val objekt = objects[objIndex]
+            if (objekt.hidden) continue
+            if (!isObjectInDistanceRange(objekt)) continue
+            modelBatch!!.render(instance, environment)
+        }
+        modelBatch!!.end()
+
+        // Draw vertical marker lines above personal polygon buildings
+        if (personalBuildingCentroids.isNotEmpty()) {
+            Gdx.gl.glLineWidth(3f)
+            shapeRenderer!!.projectionMatrix = cam!!.combined
+            shapeRenderer!!.begin(ShapeRenderer.ShapeType.Line)
+            shapeRenderer!!.color = Color.WHITE
+            for ((i, centroid) in personalBuildingCentroids.withIndex()) {
+                val objIndex = personalBuildingObjectIndices[i]
+                val objekt = objects[objIndex]
+                if (!objekt.visible) continue
+                val top = Vector3(centroid.x, centroid.y + polygonLineHeight, centroid.z)
+                shapeRenderer!!.line(centroid, top)
+            }
+            shapeRenderer!!.end()
+        }
 
         // Render vertex editor wireframe
         if (verticesEditorActive && vertexWorldPositions.size >= 1) {
@@ -784,6 +821,30 @@ class MyGdxGame (
         makeTextForObject(index){ pos, rot ->
             objekt.name + "\n" + "%.2f".format(distance3D(camTranslatingVector, pos)) + " m"//\n%.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
         }
+    }
+
+    private fun showPolygonObjectName(objectIndex: Int) {
+        val objekt = objects[objectIndex]
+        // Find the matching personal building centroid
+        val pbIdx = personalBuildingObjectIndices.indexOf(objectIndex)
+        if (pbIdx < 0 || pbIdx >= personalBuildingCentroids.size) return
+
+        val centroid = personalBuildingCentroids[pbIdx]
+        // Top of the vertical marker line
+        val lineTop = Vector3(centroid.x, centroid.y + polygonLineHeight, centroid.z)
+        val screenPos = Vector3(lineTop)
+        cam!!.project(screenPos)
+
+        // Behind camera check
+        if (screenPos.z > 1f) return
+
+        val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+        val dist = distance3D(camTranslatingVector, objektPos)
+        val label = objekt.name + "\n" + "%.2f".format(dist) + " m"
+
+        try {
+            fontCaches[objectIndex].setText(label, screenPos.x, screenPos.y, 0f, Align.center, false)
+        } catch (_: Exception) {}
     }
 
     fun projectObject(model: ModelInstance): MyPoint{

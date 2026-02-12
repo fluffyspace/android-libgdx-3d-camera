@@ -75,6 +75,7 @@ fun AROverlayScreen(
     onVertexHeightChanged: (Float) -> Unit = {},
     onCancelVertices: () -> Unit = {},
     onSaveVertices: () -> Unit = {},
+    onObjectsOnTopToggle: (Boolean) -> Unit = {},
     onFloorGridToggle: (Boolean) -> Unit = {},
     onAutoAdjustAltitude: () -> Unit = {},
     onHeightOffsetChanged: (Float) -> Unit = {},
@@ -156,6 +157,7 @@ fun AROverlayScreen(
                     onBuildingDistanceChanged = onBuildingDistanceChanged,
                     onNoDistanceObjectsToggle = onNoDistanceObjectsToggle,
                     onNoDistanceBuildingsToggle = onNoDistanceBuildingsToggle,
+                    onObjectsOnTopToggle = onObjectsOnTopToggle,
                     onFloorGridToggle = onFloorGridToggle,
                     onAutoAdjustAltitude = onAutoAdjustAltitude,
                     onHeightOffsetChanged = onHeightOffsetChanged
@@ -530,6 +532,7 @@ private fun SettingsPanel(
     onBuildingDistanceChanged: (min: Float, max: Float) -> Unit,
     onNoDistanceObjectsToggle: (Boolean) -> Unit,
     onNoDistanceBuildingsToggle: (Boolean) -> Unit,
+    onObjectsOnTopToggle: (Boolean) -> Unit,
     onFloorGridToggle: (Boolean) -> Unit,
     onAutoAdjustAltitude: () -> Unit,
     onHeightOffsetChanged: (Float) -> Unit
@@ -576,6 +579,19 @@ private fun SettingsPanel(
                     thumbColor = Color.White,
                     activeTrackColor = Color.White,
                     inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                )
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Objects on top", color = Color.White, fontSize = 12.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            Switch(
+                checked = viewModel.objectsOnTop,
+                onCheckedChange = { onObjectsOnTopToggle(it) },
+                modifier = Modifier.height(24.dp),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.Yellow,
+                    checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
                 )
             )
         }

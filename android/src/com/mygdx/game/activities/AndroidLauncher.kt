@@ -294,6 +294,10 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                             arViewModel.noDistanceBuildings = enabled
                             game.noDistanceBuildings = enabled
                         },
+                        onObjectsOnTopToggle = { enabled ->
+                            arViewModel.objectsOnTop = enabled
+                            game.objectsOnTop = enabled
+                        },
                         onMoveClick = {
                             if (game.editMode == MyGdxGame.EditMode.move) {
                                 game.editMode = null
