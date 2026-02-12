@@ -1,5 +1,7 @@
 package com.mygdx.game.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,16 +10,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,9 +30,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +76,25 @@ fun MainScreen(
     val uploadStates by viewModel.uploadStates.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
     val uploadDone by viewModel.uploadDone.collectAsState()
+    val disabledCategories by viewModel.disabledCategories.collectAsState()
+
+    val allCategories by remember(objects) {
+        derivedStateOf { objects.mapNotNull { it.category }.distinct().sorted() }
+    }
+    val hasUncategorized by remember(objects) {
+        derivedStateOf { objects.any { it.category == null } }
+    }
+    val filteredObjects by remember(objects, disabledCategories) {
+        derivedStateOf {
+            objects.filter { obj ->
+                val key = obj.category ?: MainViewModel.UNCATEGORIZED_KEY
+                key !in disabledCategories
+            }
+        }
+    }
+    val existingCategories by remember(objects) {
+        derivedStateOf { objects.mapNotNull { it.category }.distinct().sorted() }
+    }
 
     var showAddDialog by remember { mutableStateOf(false) }
     var objectToEdit by remember { mutableStateOf<Objekt?>(null) }
@@ -138,7 +163,7 @@ fun MainScreen(
                         onShowInvalidCoordinatesToast()
                         return@FloatingActionButton
                     }
-                    onOpenViewer(viewModel.camera.value, objects)
+                    onOpenViewer(viewModel.camera.value, filteredObjects)
                 }
             ) {
                 Icon(
@@ -214,9 +239,36 @@ fun MainScreen(
                     Icon(Icons.Default.Add, contentDescription = "Add object")
                 }
             }
+
+            // Category filter chips
+            if (allCategories.isNotEmpty() || hasUncategorized) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (hasUncategorized) {
+                        FilterChip(
+                            selected = MainViewModel.UNCATEGORIZED_KEY !in disabledCategories,
+                            onClick = { viewModel.toggleCategory(MainViewModel.UNCATEGORIZED_KEY) },
+                            label = { Text("Uncategorized") }
+                        )
+                    }
+                    allCategories.forEach { cat ->
+                        FilterChip(
+                            selected = cat !in disabledCategories,
+                            onClick = { viewModel.toggleCategory(cat) },
+                            label = { Text(cat) }
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (objects.isEmpty()) {
+            if (filteredObjects.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -231,7 +283,7 @@ fun MainScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(objects, key = { it.id }) { objekt ->
+                    items(filteredObjects, key = { it.id }) { objekt ->
                         ObjectListItem(
                             objekt = objekt,
                             onClick = { objectToEdit = objekt },
@@ -247,14 +299,16 @@ fun MainScreen(
     if (showAddDialog) {
         AddOrEditObjectDialog(
             objectToEdit = null,
+            existingCategories = existingCategories,
             onDismiss = { showAddDialog = false },
-            onConfirm = { coordinates, name, color, osmData ->
+            onConfirm = { coordinates, name, color, osmData, category ->
                 viewModel.createObjectFromInput(
                     coordinates, name, color,
                     osmId = osmData?.osmId,
                     polygonJson = osmData?.polygonJson,
                     heightMeters = osmData?.heightMeters ?: 10f,
-                    minHeightMeters = osmData?.minHeightMeters ?: 0f
+                    minHeightMeters = osmData?.minHeightMeters ?: 0f,
+                    category = category
                 )?.let {
                     viewModel.addObject(it)
                 }
@@ -274,17 +328,19 @@ fun MainScreen(
             initialCoordinates = pickedCoordinates,
             initialName = pendingName,
             initialColor = pendingColor,
+            existingCategories = existingCategories,
             onDismiss = {
                 showDialogWithPickedCoords = false
                 onClearPickedCoordinates()
             },
-            onConfirm = { coordinates, name, color, osmData ->
+            onConfirm = { coordinates, name, color, osmData, category ->
                 viewModel.createObjectFromInput(
                     coordinates, name, color,
                     osmId = osmData?.osmId,
                     polygonJson = osmData?.polygonJson,
                     heightMeters = osmData?.heightMeters ?: 10f,
-                    minHeightMeters = osmData?.minHeightMeters ?: 0f
+                    minHeightMeters = osmData?.minHeightMeters ?: 0f,
+                    category = category
                 )?.let {
                     viewModel.addObject(it)
                 }
@@ -303,14 +359,16 @@ fun MainScreen(
     objectToEdit?.let { objekt ->
         AddOrEditObjectDialog(
             objectToEdit = objekt,
+            existingCategories = existingCategories,
             onDismiss = { objectToEdit = null },
-            onConfirm = { coordinates, name, color, osmData ->
+            onConfirm = { coordinates, name, color, osmData, category ->
                 viewModel.createObjectFromInput(
                     coordinates, name, color,
                     osmId = osmData?.osmId ?: objekt.osmId,
                     polygonJson = osmData?.polygonJson ?: objekt.polygonJson,
                     heightMeters = osmData?.heightMeters ?: objekt.heightMeters,
-                    minHeightMeters = osmData?.minHeightMeters ?: objekt.minHeightMeters
+                    minHeightMeters = osmData?.minHeightMeters ?: objekt.minHeightMeters,
+                    category = category
                 )?.let {
                     it.id = objekt.id
                     viewModel.updateObject(it)

@@ -59,6 +59,13 @@ fun ObjectListItem(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (objekt.category != null) {
+                    Text(
+                        text = objekt.category!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
         HorizontalDivider()

@@ -25,10 +25,15 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -124,14 +129,16 @@ private fun parseCoordinatesLatLon(coords: String): Pair<Double, Double>? {
     return lat to lon
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddOrEditObjectDialog(
     objectToEdit: Objekt?,
     initialCoordinates: String? = null,
     initialName: String? = null,
     initialColor: String? = null,
+    existingCategories: List<String> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (coordinates: String, name: String, color: String, osmData: OsmBuildingData?) -> Unit,
+    onConfirm: (coordinates: String, name: String, color: String, osmData: OsmBuildingData?, category: String?) -> Unit,
     onChooseFromMap: ((currentCoordinates: String, currentName: String, currentColor: String) -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -144,6 +151,8 @@ fun AddOrEditObjectDialog(
         )
     }
     var name by remember { mutableStateOf(objectToEdit?.name ?: initialName ?: "") }
+    var category by remember { mutableStateOf(objectToEdit?.category ?: "") }
+    var categoryDropdownExpanded by remember { mutableStateOf(false) }
 
     // Search state
     var searchQuery by remember { mutableStateOf("") }
@@ -394,6 +403,47 @@ fun AddOrEditObjectDialog(
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // Category picker
+                ExposedDropdownMenuBox(
+                    expanded = categoryDropdownExpanded,
+                    onExpandedChange = { categoryDropdownExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = { category = it },
+                        label = { Text("Category") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryEditable),
+                        singleLine = true,
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded)
+                        },
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+                    )
+                    val filtered = existingCategories.filter {
+                        it.contains(category, ignoreCase = true)
+                    }
+                    if (filtered.isNotEmpty()) {
+                        ExposedDropdownMenu(
+                            expanded = categoryDropdownExpanded,
+                            onDismissRequest = { categoryDropdownExpanded = false }
+                        ) {
+                            filtered.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option) },
+                                    onClick = {
+                                        category = option
+                                        categoryDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Color",
                     style = MaterialTheme.typography.bodySmall,
@@ -431,7 +481,7 @@ fun AddOrEditObjectDialog(
                     if (parts.size == 3) {
                         val colorInt = AndroidColor.HSVToColor(floatArrayOf(hue, 1f, 1f))
                         val colorHex = String.format("#%06X", 0xFFFFFF and colorInt)
-                        onConfirm(coordinates, name, colorHex, osmBuildingData)
+                        onConfirm(coordinates, name, colorHex, osmBuildingData, category.ifBlank { null })
                     }
                 }
             ) {

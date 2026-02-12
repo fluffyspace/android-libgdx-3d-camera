@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.room.Room
 import com.google.gson.Gson
 import com.mygdx.game.BuildConfig
 import com.mygdx.game.DatastoreRepository
@@ -25,10 +24,7 @@ import kotlinx.coroutines.withContext
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db: AppDatabase = Room.databaseBuilder(
-        application,
-        AppDatabase::class.java, "database-name"
-    ).fallbackToDestructiveMigration().build()
+    private val db: AppDatabase = AppDatabase.getInstance(application)
 
     val osmAuthManager = OsmAuthManager(application, BuildConfig.OSM_CLIENT_ID)
 
@@ -59,8 +55,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uploadDone = MutableStateFlow(false)
     val uploadDone: StateFlow<Boolean> = _uploadDone.asStateFlow()
 
+    private val _disabledCategories = MutableStateFlow<Set<String>>(emptySet())
+    val disabledCategories: StateFlow<Set<String>> = _disabledCategories.asStateFlow()
+
     init {
         loadCameraFromDataStore()
+        loadDisabledCategories()
         refreshOsmLoginState()
     }
 
@@ -126,6 +126,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun loadDisabledCategories() {
+        DatastoreRepository.readDisabledCategories(getApplication()) { set ->
+            viewModelScope.launch(Dispatchers.Main) {
+                _disabledCategories.value = set
+            }
+        }
+    }
+
+    fun toggleCategory(key: String) {
+        val current = _disabledCategories.value.toMutableSet()
+        if (key in current) current.remove(key) else current.add(key)
+        _disabledCategories.value = current
+        DatastoreRepository.updateDataStore(
+            getApplication(),
+            DatastoreRepository.disabledCategoriesKey,
+            Gson().toJson(current.toTypedArray())
+        )
+    }
+
     fun createObjectFromInput(
         coordinates: String,
         name: String,
@@ -133,7 +152,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         osmId: Long? = null,
         polygonJson: String? = null,
         heightMeters: Float = 10f,
-        minHeightMeters: Float = 0f
+        minHeightMeters: Float = 0f,
+        category: String? = null
     ): Objekt? {
         return textToObject(coordinates)?.apply {
             this.name = name
@@ -148,6 +168,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             this.polygonJson = polygonJson
             this.heightMeters = heightMeters
             this.minHeightMeters = minHeightMeters
+            this.category = category
         }
     }
 
@@ -229,6 +250,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     companion object {
+        const val UNCATEGORIZED_KEY = "__uncategorized__"
+
         fun textToObject(text: String): Objekt? {
             val coordinates = text.split(",")
                 .map { it.trim() }

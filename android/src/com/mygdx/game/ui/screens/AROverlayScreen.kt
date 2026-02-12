@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -540,9 +542,11 @@ private fun SettingsPanel(
     Column(
         modifier = Modifier
             .width(280.dp)
+            .heightIn(max = 400.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xCC1A1A1A))
             .padding(12.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         // Objects distance section
         Text("Objects (${viewModel.personalObjectCount} loaded)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)

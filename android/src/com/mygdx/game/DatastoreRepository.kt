@@ -26,6 +26,7 @@ class DatastoreRepository {
     companion object {
         val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
         val cameraDataStoreKey: Preferences.Key<String> = stringPreferencesKey("camera_coordinates")
+        val disabledCategoriesKey: Preferences.Key<String> = stringPreferencesKey("disabled_categories")
 
         fun updateDataStore(context: Context, INTEGER_KEY: Preferences.Key<String>, value: String) {
             CoroutineScope(Dispatchers.IO).launch {
@@ -51,6 +52,21 @@ class DatastoreRepository {
                 cameraFlow.first()?.let{
                     afterwards(it)
                 }
+            }
+        }
+
+        fun readDisabledCategories(context: Context, callback: (Set<String>) -> Unit) {
+            val flow: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+                val json = prefs[disabledCategoriesKey] ?: ""
+                if (json.isBlank()) emptySet()
+                else try {
+                    Gson().fromJson(json, Array<String>::class.java).toSet()
+                } catch (e: JsonSyntaxException) {
+                    emptySet()
+                }
+            }
+            CoroutineScope(Dispatchers.IO).launch {
+                callback(flow.first())
             }
         }
     }

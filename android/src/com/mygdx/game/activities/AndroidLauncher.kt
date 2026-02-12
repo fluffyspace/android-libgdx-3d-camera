@@ -434,7 +434,8 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                                             polygonJson,
                                             height,
                                             0f,
-                                            objekt.hidden
+                                            objekt.hidden,
+                                            objekt.category
                                         )
                                     )
                                 }
@@ -689,7 +690,8 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                             objekt.polygonJson,
                             objekt.heightMeters,
                             objekt.minHeightMeters,
-                            objekt.hidden
+                            objekt.hidden,
+                            objekt.category
                         )
                     )
                 }

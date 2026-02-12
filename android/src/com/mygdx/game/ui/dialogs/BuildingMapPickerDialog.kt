@@ -55,7 +55,7 @@ fun BuildingMapPickerDialog(
 
     LaunchedEffect(Unit) {
         try {
-            val results = OverpassClient.fetchBuildingsNearPoint(lat, lon, 50)
+            val results = OverpassClient.fetchBuildingsNearPoint(lat, lon, 150)
             buildings = results.map { (building, dist) ->
                 BuildingWithDistance(building, dist)
             }

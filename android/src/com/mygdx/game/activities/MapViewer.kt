@@ -127,7 +127,7 @@ class MapViewer : ComponentActivity() {
                             showAddDialog = false
                             dialogLatLng = null
                         },
-                        onConfirm = { coordsText, name, colorText, osmData ->
+                        onConfirm = { coordsText, name, colorText, osmData, category ->
                             val parts = coordsText.split(",").map { it.trim() }
                             if (parts.size == 3) {
                                 try {
@@ -147,7 +147,8 @@ class MapViewer : ComponentActivity() {
                                         osmId = osmData?.osmId,
                                         polygonJson = osmData?.polygonJson,
                                         heightMeters = osmData?.heightMeters ?: 10f,
-                                        minHeightMeters = osmData?.minHeightMeters ?: 0f
+                                        minHeightMeters = osmData?.minHeightMeters ?: 0f,
+                                        category = category
                                     )
                                     lifecycleScope.launch(Dispatchers.IO) {
                                         Log.d("ingo", "adding object")

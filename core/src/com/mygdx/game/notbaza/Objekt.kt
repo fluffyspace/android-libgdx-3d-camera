@@ -25,5 +25,6 @@ data class Objekt(
     var heightMeters: Float = 10f,
     var minHeightMeters: Float = 0f,
     var hidden: Boolean = false,
+    var category: String? = null,
 )
 
