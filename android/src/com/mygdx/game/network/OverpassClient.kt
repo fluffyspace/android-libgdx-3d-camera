@@ -15,7 +15,7 @@ import kotlin.math.sqrt
 
 object OverpassClient {
 
-    private const val OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+    var overpassUrl = "https://overpass-api.de/api/interpreter"
 
     // TODO: remove mock — set to null to use real Overpass API
     private var appContext: Context? = null
@@ -33,7 +33,7 @@ object OverpassClient {
                         .bufferedReader().use { it.readText() }
                 } ?: run {
                     val query = "[out:json][timeout:25];way[\"building\"](around:$radiusMeters,$lat,$lon);out body geom;"
-                    val url = URL("$OVERPASS_URL?data=${java.net.URLEncoder.encode(query, "UTF-8")}")
+                    val url = URL("$overpassUrl?data=${java.net.URLEncoder.encode(query, "UTF-8")}")
                     val connection = url.openConnection() as HttpURLConnection
                     connection.requestMethod = "GET"
                     connection.connectTimeout = 15000
@@ -52,7 +52,7 @@ object OverpassClient {
                 overpassResponse.elements.mapNotNull { element -> parseBuilding(element) }
             } catch (e: Exception) {
                 android.util.Log.e("BuildingFetch", "Exception in fetchBuildings", e)
-                NetworkLogger.logError(OVERPASS_URL, e)
+                NetworkLogger.logError(overpassUrl, e)
                 emptyList()
             }
         }

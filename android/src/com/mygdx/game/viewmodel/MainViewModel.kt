@@ -13,6 +13,8 @@ import com.mygdx.game.baza.Objekt
 import com.mygdx.game.baza.UserBuilding
 import com.mygdx.game.network.OsmApiClient
 import com.mygdx.game.network.OsmAuthManager
+import com.mygdx.game.network.OverpassClient
+import com.mygdx.game.network.OverpassServer
 import com.mygdx.game.ui.dialogs.BuildingUploadState
 import com.mygdx.game.ui.dialogs.BuildingUploadStatus
 import kotlinx.coroutines.Dispatchers
@@ -58,9 +60,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _disabledCategories = MutableStateFlow<Set<String>>(emptySet())
     val disabledCategories: StateFlow<Set<String>> = _disabledCategories.asStateFlow()
 
+    private val _overpassServers = MutableStateFlow(listOf(OverpassServer.DEFAULT))
+    val overpassServers: StateFlow<List<OverpassServer>> = _overpassServers.asStateFlow()
+
+    private val _selectedServerId = MutableStateFlow("default")
+    val selectedServerId: StateFlow<String> = _selectedServerId.asStateFlow()
+
     init {
         loadCameraFromDataStore()
         loadDisabledCategories()
+        loadOverpassServers()
         refreshOsmLoginState()
     }
 
@@ -132,6 +141,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _disabledCategories.value = set
             }
         }
+    }
+
+    private fun loadOverpassServers() {
+        DatastoreRepository.readOverpassServers(getApplication()) { servers ->
+            viewModelScope.launch(Dispatchers.Main) {
+                _overpassServers.value = servers
+            }
+        }
+        DatastoreRepository.readSelectedOverpassServerId(getApplication()) { id ->
+            viewModelScope.launch(Dispatchers.Main) {
+                _selectedServerId.value = id
+                applySelectedServer(id)
+            }
+        }
+    }
+
+    private fun applySelectedServer(id: String) {
+        val server = _overpassServers.value.find { it.id == id } ?: OverpassServer.DEFAULT
+        OverpassClient.overpassUrl = server.url
+    }
+
+    fun selectServer(id: String) {
+        _selectedServerId.value = id
+        applySelectedServer(id)
+        DatastoreRepository.updateDataStore(
+            getApplication(),
+            DatastoreRepository.selectedOverpassServerIdKey,
+            id
+        )
+    }
+
+    fun addServer(name: String, url: String) {
+        val server = OverpassServer(name = name, url = url)
+        val updated = _overpassServers.value + server
+        _overpassServers.value = updated
+        saveOverpassServers(updated)
+    }
+
+    fun updateServer(id: String, name: String, url: String) {
+        val updated = _overpassServers.value.map {
+            if (it.id == id && !it.isDefault) it.copy(name = name, url = url) else it
+        }
+        _overpassServers.value = updated
+        saveOverpassServers(updated)
+        if (_selectedServerId.value == id) {
+            applySelectedServer(id)
+        }
+    }
+
+    fun deleteServer(id: String) {
+        if (id == "default") return
+        val updated = _overpassServers.value.filter { it.id != id }
+        _overpassServers.value = updated
+        saveOverpassServers(updated)
+        if (_selectedServerId.value == id) {
+            selectServer("default")
+        }
+    }
+
+    private fun saveOverpassServers(servers: List<OverpassServer>) {
+        DatastoreRepository.updateDataStore(
+            getApplication(),
+            DatastoreRepository.overpassServersKey,
+            Gson().toJson(servers.toTypedArray())
+        )
     }
 
     fun toggleCategory(key: String) {

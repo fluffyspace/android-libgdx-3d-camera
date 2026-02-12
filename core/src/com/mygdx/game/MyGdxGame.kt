@@ -377,7 +377,7 @@ class MyGdxGame (
         val angle = acos((Vector3.Y).dot(normalVector))
 
         // Create a quaternion representing the rotation
-        return Quaternion().setFromAxisRad(rotationAxis, (angle+Math.PI).toFloat())
+        return Quaternion().setFromAxisRad(rotationAxis, angle)
     }
 
     fun updateModel(index: Int){

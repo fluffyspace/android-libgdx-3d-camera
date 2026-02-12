@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,8 +37,10 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapType
 import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Circle
 import com.google.maps.android.compose.Polygon
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.launch
 import com.mygdx.game.notbaza.Building
 import com.mygdx.game.network.OverpassClient
 
@@ -48,14 +51,19 @@ fun BuildingMapPickerDialog(
     onSelect: (Building) -> Unit,
     onSkip: () -> Unit
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(true) }
     var buildings by remember { mutableStateOf<List<BuildingWithDistance>>(emptyList()) }
     var selectedBuilding by remember { mutableStateOf<Building?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    val scanRadius = 150
+
+    suspend fun scanBuildings(scanLat: Double, scanLon: Double) {
+        isLoading = true
+        errorMessage = null
         try {
-            val results = OverpassClient.fetchBuildingsNearPoint(lat, lon, 150)
+            val results = OverpassClient.fetchBuildingsNearPoint(scanLat, scanLon, scanRadius)
             buildings = results.map { (building, dist) ->
                 BuildingWithDistance(building, dist)
             }
@@ -66,6 +74,10 @@ fun BuildingMapPickerDialog(
             errorMessage = "Failed to fetch buildings"
         }
         isLoading = false
+    }
+
+    LaunchedEffect(Unit) {
+        scanBuildings(lat, lon)
     }
 
     val cameraPositionState = rememberCameraPositionState {
@@ -122,6 +134,15 @@ fun BuildingMapPickerDialog(
                                 myLocationButtonEnabled = false
                             )
                         ) {
+                            // 150m radius circle at map center
+                            Circle(
+                                center = cameraPositionState.position.target,
+                                radius = scanRadius.toDouble(),
+                                fillColor = Color.Transparent,
+                                strokeColor = Color(0xFFFFFFFF),
+                                strokeWidth = 3f
+                            )
+
                             buildings.forEach { bwd ->
                                 val building = bwd.building
                                 if (building.polygon.size >= 3) {
@@ -183,6 +204,18 @@ fun BuildingMapPickerDialog(
                 ) {
                     TextButton(onClick = onSkip) {
                         Text("Skip")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            val center = cameraPositionState.position.target
+                            coroutineScope.launch {
+                                scanBuildings(center.latitude, center.longitude)
+                            }
+                        },
+                        enabled = !isLoading
+                    ) {
+                        Text("Scan")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     TextButton(

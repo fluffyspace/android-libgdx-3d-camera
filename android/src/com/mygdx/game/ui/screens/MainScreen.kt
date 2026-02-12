@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +50,7 @@ import com.mygdx.game.baza.Objekt
 import com.mygdx.game.ui.components.ObjectListItem
 import com.mygdx.game.ui.dialogs.AddOrEditObjectDialog
 import com.mygdx.game.ui.dialogs.OsmUploadDialog
+import com.mygdx.game.ui.dialogs.OverpassServerDialog
 import com.mygdx.game.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,6 +79,8 @@ fun MainScreen(
     val isUploading by viewModel.isUploading.collectAsState()
     val uploadDone by viewModel.uploadDone.collectAsState()
     val disabledCategories by viewModel.disabledCategories.collectAsState()
+    val overpassServers by viewModel.overpassServers.collectAsState()
+    val selectedServerId by viewModel.selectedServerId.collectAsState()
 
     val allCategories by remember(objects) {
         derivedStateOf { objects.mapNotNull { it.category }.distinct().sorted() }
@@ -101,6 +105,7 @@ fun MainScreen(
     var coordinatesInput by remember(cameraText) { mutableStateOf(cameraText) }
     var showOsmMenu by remember { mutableStateOf(false) }
     var showUploadDialog by remember { mutableStateOf(false) }
+    var showServerDialog by remember { mutableStateOf(false) }
     var objectToDelete by remember { mutableStateOf<Objekt?>(null) }
 
     // Show dialog with picked coordinates when returning from map
@@ -114,6 +119,9 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("AR Objects") },
                 actions = {
+                    IconButton(onClick = { showServerDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Overpass settings")
+                    }
                     Box {
                         IconButton(onClick = {
                             if (isOsmLoggedIn) {
@@ -411,6 +419,19 @@ fun MainScreen(
                 viewModel.uploadToOsm(uploadableBuildings, comment)
             },
             onDismiss = { showUploadDialog = false }
+        )
+    }
+
+    // Overpass server settings dialog
+    if (showServerDialog) {
+        OverpassServerDialog(
+            servers = overpassServers,
+            selectedServerId = selectedServerId,
+            onSelect = { viewModel.selectServer(it) },
+            onAdd = { name, url -> viewModel.addServer(name, url) },
+            onUpdate = { id, name, url -> viewModel.updateServer(id, name, url) },
+            onDelete = { viewModel.deleteServer(it) },
+            onDismiss = { showServerDialog = false }
         )
     }
 }
