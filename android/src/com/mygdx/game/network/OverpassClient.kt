@@ -1,9 +1,6 @@
 package com.mygdx.game.network
 
-import android.content.Context
 import com.google.gson.Gson
-import com.google.gson.annotations.SerializedName
-import com.mygdx.game.R
 import com.mygdx.game.notbaza.Building
 import com.mygdx.game.notbaza.LatLon
 import kotlinx.coroutines.Dispatchers
@@ -17,35 +14,21 @@ object OverpassClient {
 
     var overpassUrl = "https://overpass-api.de/api/interpreter"
 
-    // TODO: remove mock — set to null to use real Overpass API
-    private var appContext: Context? = null
-
-    fun initMock(context: Context) {
-        appContext = context.applicationContext
-    }
-
     suspend fun fetchBuildings(lat: Double, lon: Double, radiusMeters: Int = 300): List<Building> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = appContext?.let { ctx ->
-                    android.util.Log.d("BuildingFetch", "Using mock data from raw resource")
-                    ctx.resources.openRawResource(R.raw.mock_overpass)
-                        .bufferedReader().use { it.readText() }
-                } ?: run {
-                    val query = "[out:json][timeout:25];way[\"building\"](around:$radiusMeters,$lat,$lon);out body geom;"
-                    val url = URL("$overpassUrl?data=${java.net.URLEncoder.encode(query, "UTF-8")}")
-                    val connection = url.openConnection() as HttpURLConnection
-                    connection.requestMethod = "GET"
-                    connection.connectTimeout = 15000
-                    connection.readTimeout = 15000
+                val query = "[out:json][timeout:25];way[\"building\"](around:$radiusMeters,$lat,$lon);out body geom;"
+                val url = URL("$overpassUrl?data=${java.net.URLEncoder.encode(query, "UTF-8")}")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
 
-                    NetworkLogger.logRequest(connection)
-                    val startTime = System.currentTimeMillis()
-                    val resp = connection.inputStream.bufferedReader().use { it.readText() }
-                    NetworkLogger.logResponse(connection, startTime, resp)
-                    connection.disconnect()
-                    resp
-                }
+                NetworkLogger.logRequest(connection)
+                val startTime = System.currentTimeMillis()
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                NetworkLogger.logResponse(connection, startTime, response)
+                connection.disconnect()
 
                 val overpassResponse = Gson().fromJson(response, OverpassResponse::class.java)
                 android.util.Log.d("BuildingFetch", "Parsed ${overpassResponse.elements.size} elements")

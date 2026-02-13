@@ -148,7 +148,6 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
 
         // Fetch OSM building footprints + user buildings, merge them
         val cameraObj = gson.fromJson(cameraIntentExtra, Objekt::class.java)
-        OverpassClient.initMock(this) // TODO: remove mock
         val buildingCache = BuildingCache(applicationContext)
         buildingCache.clearAll() // TODO: remove after stale empty cache is cleared
         lifecycleScope.launch(Dispatchers.IO) {
