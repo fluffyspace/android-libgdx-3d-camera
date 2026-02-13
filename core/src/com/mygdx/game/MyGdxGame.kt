@@ -10,6 +10,7 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.BitmapFontCache
+import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator
 import com.badlogic.gdx.graphics.g2d.Sprite
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.g3d.Environment
@@ -147,7 +148,7 @@ class MyGdxGame (
     var editMode: EditMode? = null
     var cameraCartesian: Vector3 = Vector3()
     var latitude = camera.x
-    lateinit var cameraEarthRot: Quaternion
+    lateinit var cameraEarthRotMatrix: Matrix4
     lateinit var normalVector: Vector3
 
 
@@ -158,7 +159,12 @@ class MyGdxGame (
         val w = Gdx.graphics.width.toFloat()
         val h = Gdx.graphics.height.toFloat()
 
-        font = BitmapFont(Gdx.files.internal("arial_normal.fnt"), false)
+        val generator = FreeTypeFontGenerator(Gdx.files.internal("font.ttf"))
+        val parameter = FreeTypeFontGenerator.FreeTypeFontParameter()
+        parameter.size = 60
+        parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS + "čćžšđČĆŽŠĐ"
+        font = generator.generateFont(parameter)
+        generator.dispose()
 
         // Constructs a new OrthographicCamera, using the given viewport width and height
         // Height is multiplied by aspect ratio.
@@ -167,10 +173,11 @@ class MyGdxGame (
 
         normalVector = calculateNormalVector(Vector3(cameraCartesian.x, cameraCartesian.z, cameraCartesian.y))
 
-        // Align the camera orientation with the normal vector using quaternions
-
-        // Align the camera orientation with the normal vector using quaternions
-        cameraEarthRot = alignCameraOrientation(normalVector)
+        // Build rotation matrix from ECEF game coords to local tangent plane (Y-up)
+        cameraEarthRotMatrix = buildEarthRotationMatrix(
+            Math.toRadians(camera.x.toDouble()),
+            Math.toRadians(camera.y.toDouble())
+        )
 
         cam = PerspectiveCamera(81f, Gdx.graphics.width.toFloat(), Gdx.graphics.height.toFloat())
         cam!!.position.set(Vector3(0f, 0f, 0f))
@@ -332,6 +339,7 @@ class MyGdxGame (
             val cameraMoved = Vector3( newCoordinate.x-cameraCartesian.x, newCoordinate.z-cameraCartesian.z, newCoordinate.y-cameraCartesian.y)
 
             Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
+            val arTranslation = onDrawFrame.cameraTranslation
             camTranslatingVector = Vector3(
                 cameraMoved.x,
                 cameraMoved.y,
@@ -340,16 +348,18 @@ class MyGdxGame (
 
             // Build view matrix:
             // Matrix chain order determines point transformation order (reverse).
-            // Points are transformed: quat(worldRot(earthRot(translate(p))))
-            // 1. translate (camera position)
+            // Points are transformed: quat(arTranslate(worldRot(earthRot(translate(p)))))
+            // 1. translate (GPS camera position offset)
             // 2. cameraEarthRot (earth curvature correction)
-            // 3. worldRotation (user's compass correction) - applied in world-aligned frame
-            // 4. quat (device orientation from ARCore) - transforms to camera space
+            // 3. worldRotation (user's compass correction) - aligns geographic to ARCore world
+            // 4. arTranslate (ARCore positional tracking - physical movement from session start)
+            // 5. quat (device orientation from ARCore) - transforms to camera space
             view.set(
                 Matrix4()
                     .rotate(quat)
+                    .translate(-arTranslation[0], -arTranslation[1], -arTranslation[2])
                     .rotate(upVector, worldRotation + worldRotationTmp)
-                    .rotate(cameraEarthRot)
+                    .mul(cameraEarthRotMatrix)
                     .translate(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
             )
             combined.set(projection)
@@ -368,16 +378,29 @@ class MyGdxGame (
         return Vector3(cameraPosition).nor()
     }
 
-    // Function to align camera orientation with the normal vector using quaternions
-    fun alignCameraOrientation(normalVector: Vector3): Quaternion {
-        // Calculate the rotation axis perpendicular to the normal vector and the camera's current "up" direction
-        val rotationAxis: Vector3 = Vector3(normalVector).crs(Vector3.Y).nor()
+    /**
+     * Build rotation matrix from ECEF game coords (Y/Z swapped) to local tangent plane.
+     * After this rotation: X=East, Y=Up, Z=North.
+     *
+     * Game coordinate mapping: game-X = ECEF-X, game-Y = ECEF-Z, game-Z = ECEF-Y
+     */
+    fun buildEarthRotationMatrix(latRad: Double, lonRad: Double): Matrix4 {
+        val sinLat = sin(latRad).toFloat()
+        val cosLat = cos(latRad).toFloat()
+        val sinLon = sin(lonRad).toFloat()
+        val cosLon = cos(lonRad).toFloat()
 
-        // Calculate the angle between the normal vector and the camera's current "up" direction
-        val angle = acos((Vector3.Y).dot(normalVector))
-
-        // Create a quaternion representing the rotation
-        return Quaternion().setFromAxisRad(rotationAxis, angle)
+        // Row 0 (East):  local East direction in game coords = (-sinLon, 0, cosLon)
+        // Row 1 (Up):    surface normal in game coords = (cosLat*cosLon, sinLat, cosLat*sinLon)
+        // Row 2 (North): local North in game coords = (-sinLat*cosLon, cosLat, -sinLat*sinLon)
+        val vals = FloatArray(16)
+        // Column-major order for LibGDX Matrix4
+        vals[Matrix4.M00] = -sinLon;           vals[Matrix4.M01] = 0f;      vals[Matrix4.M02] = cosLon
+        vals[Matrix4.M10] = cosLat * cosLon;   vals[Matrix4.M11] = sinLat;  vals[Matrix4.M12] = cosLat * sinLon
+        vals[Matrix4.M20] = -sinLat * cosLon;  vals[Matrix4.M21] = cosLat;  vals[Matrix4.M22] = -sinLat * sinLon
+        vals[Matrix4.M03] = 0f; vals[Matrix4.M13] = 0f; vals[Matrix4.M23] = 0f
+        vals[Matrix4.M30] = 0f; vals[Matrix4.M31] = 0f; vals[Matrix4.M32] = 0f; vals[Matrix4.M33] = 1f
+        return Matrix4(vals)
     }
 
     fun updateModel(index: Int){
@@ -455,15 +478,15 @@ class MyGdxGame (
      * (minus the quat/device orientation) to get back to our rendering world space,
      * then convert to ECEF and finally to lat/lon/alt.
      */
-    fun arHitToGeo(arX: Float, arY: Float, arZ: Float): LatLon {
+    fun arHitToGeo(arX: Float, arY: Float, arZ: Float): Triple<Double, Double, Double> {
         val arPoint = Vector3(arX, arY, arZ)
 
         // Build inverse of: R_worldRot * R_earthRot * T_cam
         // = T_cam^(-1) * R_earthRot^(-1) * R_worldRot^(-1)
-        val invEarthRot = Quaternion(cameraEarthRot).conjugate()
+        val invEarthRot = Matrix4(cameraEarthRotMatrix).inv()
         val inverseMatrix = Matrix4()
             .rotate(upVector, -(worldRotation + worldRotationTmp))
-            .rotate(invEarthRot)
+            .mul(invEarthRot)
             .translate(-camTranslatingVector.x, -camTranslatingVector.y, -camTranslatingVector.z)
 
         val worldPoint = Vector3(arPoint)
@@ -475,8 +498,24 @@ class MyGdxGame (
         val ecefY = worldPoint.z.toDouble() + cameraCartesian.y.toDouble()
         val ecefZ = worldPoint.y.toDouble() + cameraCartesian.z.toDouble()
 
-        val (lat, lon, _) = cartesianToGeo(ecefX, ecefY, ecefZ)
-        return LatLon(lat, lon)
+        return cartesianToGeo(ecefX, ecefY, ecefZ)
+    }
+
+    /**
+     * Project the camera center ray at a given distance and return geographic coordinates.
+     * Used as fallback when no ARCore surface hit is detected.
+     */
+    fun getCenterRayGeo(distanceMeters: Float): Triple<Double, Double, Double> {
+        val ray = cam!!.getPickRay(Gdx.graphics.width / 2f, Gdx.graphics.height / 2f)
+        // Point along the ray at the given distance
+        val worldPoint = Vector3(ray.direction).scl(distanceMeters).add(ray.origin)
+
+        // Convert from rendering world space to ECEF (reverse Y/Z swap + camera offset)
+        val ecefX = worldPoint.x.toDouble() + cameraCartesian.x.toDouble()
+        val ecefY = worldPoint.z.toDouble() + cameraCartesian.y.toDouble()  // renderZ -> ecefY
+        val ecefZ = worldPoint.y.toDouble() + cameraCartesian.z.toDouble()  // renderY -> ecefZ
+
+        return cartesianToGeo(ecefX, ecefY, ecefZ)
     }
 
     /**
@@ -842,8 +881,10 @@ class MyGdxGame (
         val dist = distance3D(camTranslatingVector, objektPos)
         val label = objekt.name + "\n" + "%.2f".format(dist) + " m"
 
+        // Offset Y so the label bottom sits at the building top (setText draws downward from y)
+        val textHeight = font!!.lineHeight * 2  // 2 lines: name + distance
         try {
-            fontCaches[objectIndex].setText(label, screenPos.x, screenPos.y, 0f, Align.center, false)
+            fontCaches[objectIndex].setText(label, screenPos.x, screenPos.y + textHeight, 0f, Align.center, false)
         } catch (_: Exception) {}
     }
 

@@ -9,6 +9,7 @@ import com.google.ar.core.Frame
 import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
+import com.google.ar.core.DepthPoint
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.UnavailableApkTooOldException
 import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException
@@ -38,6 +39,9 @@ class ARCoreSessionManager(private val activity: Activity) {
 
     // View matrix from ARCore camera (16 floats)
     private val viewMatrix = FloatArray(16)
+
+    // Camera translation in ARCore world space (tx, ty, tz)
+    private val cameraTranslation = FloatArray(3)
 
     // Projection matrix from ARCore camera (16 floats)
     private val projMatrix = FloatArray(16)
@@ -234,6 +238,24 @@ class ARCoreSessionManager(private val activity: Activity) {
     }
 
     /**
+     * Get the camera's position in ARCore world space.
+     * At session start this is (0,0,0). As the user physically moves,
+     * ARCore tracks the translation with sub-centimeter precision.
+     */
+    fun getCameraTranslation(): FloatArray {
+        val currentFrame = frame
+
+        if (currentFrame != null && currentFrame.camera.trackingState == TrackingState.TRACKING) {
+            val pose = currentFrame.camera.pose
+            cameraTranslation[0] = pose.tx()
+            cameraTranslation[1] = pose.ty()
+            cameraTranslation[2] = pose.tz()
+        }
+
+        return cameraTranslation
+    }
+
+    /**
      * Update Geospatial pose data from ARCore Earth API.
      */
     private fun updateGeospatialPose() {
@@ -309,6 +331,9 @@ class ARCoreSessionManager(private val activity: Activity) {
     // request plane detection simultaneously; ARCore config is only toggled on 0<->1 transitions.
     private var planeDetectionRefCount = 0
 
+    // Ref-counted depth mode
+    private var depthRefCount = 0
+
     /**
      * Enable ARCore plane detection (ref-counted).
      * Multiple callers can request plane detection; it stays on until all disable.
@@ -316,7 +341,7 @@ class ARCoreSessionManager(private val activity: Activity) {
     fun enablePlaneDetection() {
         planeDetectionRefCount++
         if (planeDetectionRefCount == 1) {
-            applyPlaneDetection(true)
+            applyConfig()
         }
         Log.d(TAG, "Plane detection enabled (refCount=$planeDetectionRefCount)")
     }
@@ -328,17 +353,40 @@ class ARCoreSessionManager(private val activity: Activity) {
     fun disablePlaneDetection() {
         planeDetectionRefCount = (planeDetectionRefCount - 1).coerceAtLeast(0)
         if (planeDetectionRefCount == 0) {
-            applyPlaneDetection(false)
+            applyConfig()
         }
         Log.d(TAG, "Plane detection disabled (refCount=$planeDetectionRefCount)")
     }
 
-    private fun applyPlaneDetection(enabled: Boolean) {
+    /**
+     * Enable ARCore depth mode (ref-counted).
+     */
+    fun enableDepth() {
+        depthRefCount++
+        if (depthRefCount == 1) {
+            applyConfig()
+        }
+        Log.d(TAG, "Depth enabled (refCount=$depthRefCount)")
+    }
+
+    /**
+     * Disable ARCore depth mode (ref-counted).
+     */
+    fun disableDepth() {
+        depthRefCount = (depthRefCount - 1).coerceAtLeast(0)
+        if (depthRefCount == 0) {
+            applyConfig()
+        }
+        Log.d(TAG, "Depth disabled (refCount=$depthRefCount)")
+    }
+
+    private fun applyConfig() {
         val currentSession = session ?: return
         val config = Config(currentSession)
-        config.planeFindingMode = if (enabled) Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+        config.planeFindingMode = if (planeDetectionRefCount > 0) Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
             else Config.PlaneFindingMode.DISABLED
-        config.depthMode = Config.DepthMode.DISABLED
+        config.depthMode = if (depthRefCount > 0) Config.DepthMode.AUTOMATIC
+            else Config.DepthMode.DISABLED
         config.focusMode = Config.FocusMode.AUTO
         config.geospatialMode = Config.GeospatialMode.DISABLED
         currentSession.configure(config)
@@ -380,11 +428,13 @@ class ARCoreSessionManager(private val activity: Activity) {
         displayHeight = height
     }
 
+    data class HitTestResult(val x: Float, val y: Float, val z: Float, val method: String)
+
     /**
-     * Perform a hit test at screen center against detected ARCore planes.
-     * @return [x, y, z] in ARCore world coordinates, or null if no plane was hit.
+     * Perform a hit test at screen center against detected ARCore planes and depth points.
+     * @return HitTestResult with coordinates and detection method, or null if nothing was hit.
      */
-    fun hitTestCenter(): FloatArray? {
+    fun hitTestCenter(): HitTestResult? {
         val currentFrame = frame ?: return null
         if (currentFrame.camera.trackingState != TrackingState.TRACKING) return null
         if (displayWidth == 0 || displayHeight == 0) return null
@@ -394,16 +444,33 @@ class ARCoreSessionManager(private val activity: Activity) {
 
         try {
             val hitResults = currentFrame.hitTest(centerX, centerY)
+            // Prefer depth hits first (more precise for arbitrary surfaces)
+            for (hit in hitResults) {
+                val trackable = hit.trackable
+                if (trackable is DepthPoint) {
+                    val pose = hit.hitPose
+                    return HitTestResult(pose.tx(), pose.ty(), pose.tz(), "depth")
+                }
+            }
+            // Fall back to plane hits
             for (hit in hitResults) {
                 val trackable = hit.trackable
                 if (trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)) {
                     val pose = hit.hitPose
-                    return floatArrayOf(pose.tx(), pose.ty(), pose.tz())
+                    return HitTestResult(pose.tx(), pose.ty(), pose.tz(), "plane")
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Hit test failed", e)
         }
         return null
+    }
+
+    /**
+     * Legacy hit test returning just coordinates (for vertices editor compatibility).
+     */
+    fun hitTestCenterCoords(): FloatArray? {
+        val result = hitTestCenter() ?: return null
+        return floatArrayOf(result.x, result.y, result.z)
     }
 }

@@ -5,11 +5,13 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -81,6 +83,8 @@ fun AROverlayScreen(
     onFloorGridToggle: (Boolean) -> Unit = {},
     onAutoAdjustAltitude: () -> Unit = {},
     onHeightOffsetChanged: (Float) -> Unit = {},
+    onCoordinateViewerToggle: (Boolean) -> Unit = {},
+    onManualDistanceChanged: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -140,18 +144,79 @@ fun AROverlayScreen(
             )
         }
 
+        // Coordinate viewer crosshair + HUD
+        if (viewModel.coordinateViewerEnabled) {
+            // Crosshair
+            Icon(
+                painter = painterResource(id = R.drawable.crosshair),
+                contentDescription = "Coordinate viewer crosshair",
+                tint = Color.Cyan,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp)
+            )
+            // Coordinate HUD below crosshair
+            if (viewModel.centerLat != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(top = 80.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xAA000000))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "%.6f, %.6f".format(viewModel.centerLat, viewModel.centerLon),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "Alt: ${"%.1f".format(viewModel.centerAlt)}m  Dist: ${"%.1f".format(viewModel.centerDistance)}m",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            viewModel.distanceMethod,
+                            color = when (viewModel.distanceMethod) {
+                                "depth" -> Color.Green
+                                "plane" -> Color.Yellow
+                                else -> Color.White.copy(alpha = 0.5f)
+                            },
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Scrim to intercept all touches when settings panel is open
+        if (viewModel.settingsExpanded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { viewModel.toggleSettingsExpanded() }
+            )
+        }
+
         // Bottom left - Settings button + edit mode buttons
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
+                .fillMaxHeight()
                 .padding(10.dp),
             verticalArrangement = Arrangement.Bottom
         ) {
-            // Settings panel (expands upward from button)
+            // Settings panel (expands upward from button, constrained to available space)
             AnimatedVisibility(
                 visible = viewModel.settingsExpanded,
                 enter = expandVertically(expandFrom = Alignment.Bottom),
-                exit = shrinkVertically(shrinkTowards = Alignment.Bottom)
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom),
+                modifier = Modifier.weight(1f, fill = false)
             ) {
                 SettingsPanel(
                     viewModel = viewModel,
@@ -162,7 +227,9 @@ fun AROverlayScreen(
                     onObjectsOnTopToggle = onObjectsOnTopToggle,
                     onFloorGridToggle = onFloorGridToggle,
                     onAutoAdjustAltitude = onAutoAdjustAltitude,
-                    onHeightOffsetChanged = onHeightOffsetChanged
+                    onHeightOffsetChanged = onHeightOffsetChanged,
+                    onCoordinateViewerToggle = onCoordinateViewerToggle,
+                    onManualDistanceChanged = onManualDistanceChanged
                 )
             }
 
@@ -537,12 +604,13 @@ private fun SettingsPanel(
     onObjectsOnTopToggle: (Boolean) -> Unit,
     onFloorGridToggle: (Boolean) -> Unit,
     onAutoAdjustAltitude: () -> Unit,
-    onHeightOffsetChanged: (Float) -> Unit
+    onHeightOffsetChanged: (Float) -> Unit,
+    onCoordinateViewerToggle: (Boolean) -> Unit = {},
+    onManualDistanceChanged: (Float) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
             .width(280.dp)
-            .heightIn(max = 400.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xCC1A1A1A))
             .padding(12.dp)
@@ -751,6 +819,44 @@ private fun SettingsPanel(
                 "Camera altitude: ${"%.1f".format(viewModel.computeAltitude())}m ASL",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 11.sp
+            )
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Coordinate Viewer section
+        Text("Coordinate Viewer", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Show center coordinates", color = Color.White, fontSize = 12.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            Switch(
+                checked = viewModel.coordinateViewerEnabled,
+                onCheckedChange = { onCoordinateViewerToggle(it) },
+                modifier = Modifier.height(24.dp),
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.Cyan,
+                    checkedTrackColor = Color.Cyan.copy(alpha = 0.5f)
+                )
+            )
+        }
+        if (viewModel.coordinateViewerEnabled) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Manual fallback: ${viewModel.manualDistance.toInt()}m",
+                color = Color.White,
+                fontSize = 12.sp
+            )
+            Slider(
+                value = viewModel.manualDistance,
+                onValueChange = { onManualDistanceChanged(it) },
+                valueRange = 1f..500f,
+                modifier = Modifier.fillMaxWidth(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.Cyan,
+                    activeTrackColor = Color.Cyan,
+                    inactiveTrackColor = Color.Cyan.copy(alpha = 0.3f)
+                )
             )
         }
     }

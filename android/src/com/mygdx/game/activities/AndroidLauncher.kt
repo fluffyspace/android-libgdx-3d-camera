@@ -231,6 +231,43 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                     }
                 }
 
+                // Coordinate viewer: compute center point coordinates
+                if (arViewModel.coordinateViewerEnabled) {
+                    val hitResult = arCoreSessionManager.hitTestCenter()
+                    if (hitResult != null) {
+                        // Surface detected via depth or plane
+                        val hx = hitResult.x
+                        val hy = hitResult.y
+                        val hz = hitResult.z
+                        val method = hitResult.method
+                        // Compute distance from camera to hit point
+                        val dist = sqrt((hx * hx + hy * hy + hz * hz).toDouble()).toFloat()
+                        Gdx.app.postRunnable {
+                            val (lat, lon, alt) = game.arHitToGeo(hx, hy, hz)
+                            lifecycleScope.launch(Dispatchers.Main) {
+                                arViewModel.centerLat = lat
+                                arViewModel.centerLon = lon
+                                arViewModel.centerAlt = alt
+                                arViewModel.centerDistance = dist
+                                arViewModel.distanceMethod = method
+                            }
+                        }
+                    } else {
+                        // No surface hit - use manual distance fallback
+                        val manualDist = arViewModel.manualDistance
+                        Gdx.app.postRunnable {
+                            val (lat, lon, alt) = game.getCenterRayGeo(manualDist)
+                            lifecycleScope.launch(Dispatchers.Main) {
+                                arViewModel.centerLat = lat
+                                arViewModel.centerLon = lon
+                                arViewModel.centerAlt = alt
+                                arViewModel.centerDistance = manualDist
+                                arViewModel.distanceMethod = "manual"
+                            }
+                        }
+                    }
+                }
+
                 withContext(Dispatchers.Main) {
                     val degrees = arCoreSessionManager.headingDegrees.toFloat() + game.worldRotation + game.worldRotationTmp
                     arViewModel.updateOrientationDegrees(degrees)
@@ -356,10 +393,10 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                                         arViewModel.verticesEditorActive = true
                                     }
                                 }
-                                val hitResult = arCoreSessionManager.hitTestCenter()
+                                val hitResult = arCoreSessionManager.hitTestCenterCoords()
                                 if (hitResult != null) {
-                                    val latLon = game.arHitToGeo(hitResult[0], hitResult[1], hitResult[2])
-                                    vertexLatLons.add(latLon)
+                                    val (lat, lon, _) = game.arHitToGeo(hitResult[0], hitResult[1], hitResult[2])
+                                    vertexLatLons.add(LatLon(lat, lon))
                                     game.updateVertexPositions(vertexLatLons)
                                     lifecycleScope.launch(Dispatchers.Main) {
                                         arViewModel.vertexCount = vertexLatLons.size
@@ -533,6 +570,22 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                                     game.createInstances()
                                 }
                             }
+                        },
+                        onCoordinateViewerToggle = { enabled ->
+                            arViewModel.coordinateViewerEnabled = enabled
+                            if (enabled) {
+                                arCoreSessionManager.enablePlaneDetection()
+                                arCoreSessionManager.enableDepth()
+                            } else {
+                                arCoreSessionManager.disablePlaneDetection()
+                                arCoreSessionManager.disableDepth()
+                                arViewModel.centerLat = null
+                                arViewModel.centerLon = null
+                                arViewModel.centerAlt = null
+                            }
+                        },
+                        onManualDistanceChanged = { dist ->
+                            arViewModel.manualDistance = dist
                         }
                     )
                 }
@@ -789,6 +842,10 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
 
     override fun getProjectionMatrix(): FloatArray {
         return arCoreSessionManager.getProjectionMatrix()
+    }
+
+    override fun getCameraTranslation(): FloatArray {
+        return arCoreSessionManager.getCameraTranslation()
     }
 
     fun colorStringToLibgdxColor(color: Color): com.badlogic.gdx.graphics.Color {

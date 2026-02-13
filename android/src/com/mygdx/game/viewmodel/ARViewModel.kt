@@ -119,6 +119,15 @@ class ARViewModel : ViewModel() {
         selectedEditMode = null
     }
 
+    // Coordinate viewer
+    var coordinateViewerEnabled by mutableStateOf(false)
+    var centerLat by mutableStateOf<Double?>(null)
+    var centerLon by mutableStateOf<Double?>(null)
+    var centerAlt by mutableStateOf<Double?>(null)
+    var centerDistance by mutableFloatStateOf(0f)
+    var distanceMethod by mutableStateOf("manual")
+    var manualDistance by mutableFloatStateOf(10f)
+
     // Vertices editor state
     var vertexCount by mutableIntStateOf(0)
     var vertexPolygonClosed by mutableStateOf(false)
