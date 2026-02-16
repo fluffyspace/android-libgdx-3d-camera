@@ -111,6 +111,7 @@ class MyGdxGame (
     var personalBuildingObjectIndices: MutableList<Int> = mutableListOf()
     private var personalBuildingCentroids: MutableList<Vector3> = mutableListOf()
     private val polygonLineHeight = 30f
+    private val clampedArcs = mutableListOf<List<Vector3>>()
 
     // Vertices editor state
     var shapeRenderer: ShapeRenderer? = null
@@ -634,6 +635,67 @@ class MyGdxGame (
         return dist in minDistanceBuildings..maxDistanceBuildings
     }
 
+    private fun formatDistance(meters: Float): String {
+        return if (meters < 1000f) {
+            "%.1f m".format(meters)
+        } else {
+            "%.2f km".format(meters / 1000f)
+        }
+    }
+
+    /**
+     * Interpolate points along a great circle from camera to object at ground level,
+     * then scale the arc to fit within clampDist. Returns rendering-space positions.
+     */
+    private fun interpolateGreatCircleArc(
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double,
+        segments: Int,
+        clampDist: Float,
+        actualDist: Float
+    ): List<Vector3> {
+        val lat1Rad = Math.toRadians(lat1)
+        val lon1Rad = Math.toRadians(lon1)
+        val lat2Rad = Math.toRadians(lat2)
+        val lon2Rad = Math.toRadians(lon2)
+
+        // Angular distance on unit sphere (central angle)
+        val dLat = lat2Rad - lat1Rad
+        val dLon = lon2Rad - lon1Rad
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2)
+        val centralAngle = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        if (centralAngle < 1e-10) return emptyList()
+
+        val scale = clampDist / actualDist
+        val points = mutableListOf<Vector3>()
+
+        for (i in 0..segments) {
+            val f = i.toDouble() / segments
+            // Slerp fraction along great circle
+            val sinCA = sin(centralAngle)
+            val aCoeff = sin((1 - f) * centralAngle) / sinCA
+            val bCoeff = sin(f * centralAngle) / sinCA
+
+            val xEcef = aCoeff * cos(lat1Rad) * cos(lon1Rad) + bCoeff * cos(lat2Rad) * cos(lon2Rad)
+            val yEcef = aCoeff * cos(lat1Rad) * sin(lon1Rad) + bCoeff * cos(lat2Rad) * sin(lon2Rad)
+            val zEcef = aCoeff * sin(lat1Rad) + bCoeff * sin(lat2Rad)
+
+            // Convert unit sphere direction to ECEF at ground level
+            val lat = Math.toDegrees(atan2(zEcef, sqrt(xEcef * xEcef + yEcef * yEcef)))
+            val lon = Math.toDegrees(atan2(yEcef, xEcef))
+            val cart = geoToCartesian(lat, lon, 0.0)
+
+            // Rendering coords (ECEF offset with Y/Z swap), scaled to fit within clampDist
+            val dx = (cart.x - cameraCartesian.x) * scale
+            val dy = (cart.z - cameraCartesian.z) * scale  // Y/Z swap
+            val dz = (cart.y - cameraCartesian.y) * scale
+            points.add(Vector3(dx, dy, dz))
+        }
+        return points
+    }
+
     override fun render() {
         if(noRender) return
         touchHandler()
@@ -646,24 +708,79 @@ class MyGdxGame (
 
         // Track which objects are polygon-based (should not render sphere)
         val polygonObjectIndices = personalBuildingObjectIndices.toSet()
+        clampedArcs.clear()
 
         for((index, objekt) in objects.withIndex()){
-            // Polygon objects: compute visibility but skip sphere rendering
-            if (index in polygonObjectIndices) {
-                objekt.visible = !objekt.hidden && isObjectInDistanceRange(objekt)
-                if (objekt.visible) {
-                    showPolygonObjectName(index)
-                }
-                continue
-            }
             if (objekt.hidden) {
                 objekt.visible = false
                 continue
             }
-            objekt.visible = isVisible(cam!!, index) && isObjectInDistanceRange(objekt)
-            if (!objekt.visible) {
+            if (!isObjectInDistanceRange(objekt)) {
+                objekt.visible = false
                 continue
             }
+
+            val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+            val actualDist = distance3D(camTranslatingVector, objektPos)
+            val isFarClamped = actualDist > FAR_CLAMP_RENDER_DISTANCE
+
+            // Polygon objects
+            if (index in polygonObjectIndices) {
+                if (isFarClamped) {
+                    // Far polygon: render as clamped sphere instead of building mesh
+                    val direction = Vector3(objektPos).sub(camTranslatingVector).nor()
+                    val clampedPos = Vector3(camTranslatingVector).add(
+                        Vector3(direction).scl(FAR_CLAMP_RENDER_DISTANCE)
+                    )
+                    instances[index].transform.set(
+                        Matrix4().translate(clampedPos)
+                            .scale(objekt.size, objekt.size, objekt.size)
+                    )
+                    objekt.visible = cam!!.frustum.sphereInFrustum(clampedPos, objekt.size)
+                    if (objekt.visible) {
+                        // Curvature arc
+                        val arc = interpolateGreatCircleArc(
+                            camera.x.toDouble(), camera.y.toDouble(),
+                            objekt.x.toDouble(), objekt.y.toDouble(),
+                            CURVATURE_ARC_SEGMENTS, FAR_CLAMP_RENDER_DISTANCE, actualDist
+                        )
+                        if (arc.size >= 2) clampedArcs.add(arc)
+                        showObjectsName(index)
+                    }
+                } else {
+                    objekt.visible = true
+                    showPolygonObjectName(index)
+                }
+                continue
+            }
+
+            // Non-polygon (sphere) objects
+            if (isFarClamped) {
+                val direction = Vector3(objektPos).sub(camTranslatingVector).nor()
+                val clampedPos = Vector3(camTranslatingVector).add(
+                    Vector3(direction).scl(FAR_CLAMP_RENDER_DISTANCE)
+                )
+                instances[index].transform.set(
+                    Matrix4().translate(clampedPos)
+                        .rotate(upVector, objekt.rotationY)
+                        .rotate(xVector, objekt.rotationX)
+                        .scale(objekt.size, objekt.size, objekt.size)
+                )
+                objekt.visible = cam!!.frustum.sphereInFrustum(clampedPos, objekt.size)
+                if (!objekt.visible) continue
+
+                // Curvature arc
+                val arc = interpolateGreatCircleArc(
+                    camera.x.toDouble(), camera.y.toDouble(),
+                    objekt.x.toDouble(), objekt.y.toDouble(),
+                    CURVATURE_ARC_SEGMENTS, FAR_CLAMP_RENDER_DISTANCE, actualDist
+                )
+                if (arc.size >= 2) clampedArcs.add(arc)
+            } else {
+                objekt.visible = isVisible(cam!!, index)
+                if (!objekt.visible) continue
+            }
+
             try{
                 if(index != selectedObject){
                     showObjectsName(index)
@@ -770,8 +887,17 @@ class MyGdxGame (
         // === Pass 2: Personal objects (spheres + polygon buildings) ===
         modelBatch!!.begin(cam)
         for((index, instance) in instances.withIndex()) {
-            if (index in polygonObjectIndices) continue
             if (index < objects.size && !objects[index].visible) continue
+            if (index in polygonObjectIndices) {
+                // Only render sphere placeholder for far-clamped polygon objects
+                val objekt = objects[index]
+                val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+                val dist = distance3D(camTranslatingVector, objektPos)
+                if (dist > FAR_CLAMP_RENDER_DISTANCE) {
+                    modelBatch!!.render(instance, environment)
+                }
+                continue
+            }
             modelBatch!!.render(instance, environment)
         }
         for ((i, instance) in personalBuildingInstances.withIndex()) {
@@ -779,11 +905,15 @@ class MyGdxGame (
             val objekt = objects[objIndex]
             if (objekt.hidden) continue
             if (!isObjectInDistanceRange(objekt)) continue
+            // Skip building mesh for far-clamped polygon objects (rendered as sphere above)
+            val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+            val dist = distance3D(camTranslatingVector, objektPos)
+            if (dist > FAR_CLAMP_RENDER_DISTANCE) continue
             modelBatch!!.render(instance, environment)
         }
         modelBatch!!.end()
 
-        // Draw vertical marker lines above personal polygon buildings
+        // Draw vertical marker lines above personal polygon buildings (only for near ones)
         if (personalBuildingCentroids.isNotEmpty()) {
             Gdx.gl.glLineWidth(3f)
             shapeRenderer!!.projectionMatrix = cam!!.combined
@@ -793,6 +923,10 @@ class MyGdxGame (
                 val objIndex = personalBuildingObjectIndices[i]
                 val objekt = objects[objIndex]
                 if (!objekt.visible) continue
+                // Skip vertical line for far-clamped polygon objects
+                val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+                val dist = distance3D(camTranslatingVector, objektPos)
+                if (dist > FAR_CLAMP_RENDER_DISTANCE) continue
                 val top = Vector3(centroid.x, centroid.y + polygonLineHeight, centroid.z)
                 shapeRenderer!!.line(centroid, top)
             }
@@ -830,6 +964,20 @@ class MyGdxGame (
             shapeRenderer!!.end()
         }
 
+        // Draw curvature arcs for far-clamped objects
+        if (clampedArcs.isNotEmpty()) {
+            Gdx.gl.glLineWidth(2f)
+            shapeRenderer!!.projectionMatrix = cam!!.combined
+            shapeRenderer!!.begin(ShapeRenderer.ShapeType.Line)
+            shapeRenderer!!.color = Color.YELLOW
+            for (arc in clampedArcs) {
+                for (i in 0 until arc.size - 1) {
+                    shapeRenderer!!.line(arc[i], arc[i + 1])
+                }
+            }
+            shapeRenderer!!.end()
+        }
+
         batch!!.begin()
         try {
             fontCaches.forEachIndexed { index, fontCache ->
@@ -853,12 +1001,11 @@ class MyGdxGame (
 
     private fun showObjectsName(index: Int) {
         val objekt = objects[index]
-        /*makeTextForObject(index) { pos, rot ->
-            objects[index].name + "\n" + usingKotlinStringFormat(distance3D(Vector3(0f,0f,0f), Vector3(objects[index].x, objects[index].y, objects[index].z)), 2)
-        }*/
+        val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+        val actualDist = distance3D(camTranslatingVector, objektPos)
 
         makeTextForObject(index){ pos, rot ->
-            objekt.name + "\n" + "%.2f".format(distance3D(camTranslatingVector, pos)) + " m"//\n%.2f, %.2f, %.2f".format(pos.x, pos.y, pos.z)
+            objekt.name + "\n" + formatDistance(actualDist)
         }
     }
 
@@ -879,7 +1026,7 @@ class MyGdxGame (
 
         val objektPos = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
         val dist = distance3D(camTranslatingVector, objektPos)
-        val label = objekt.name + "\n" + "%.2f".format(dist) + " m"
+        val label = objekt.name + "\n" + formatDistance(dist)
 
         // Offset Y so the label bottom sits at the building top (setText draws downward from y)
         val textHeight = font!!.lineHeight * 2  // 2 lines: name + distance
@@ -1303,5 +1450,8 @@ class MyGdxGame (
         // this is our "target" resolution, note that the window can be any size, it is not bound to this one
         const val VP_WIDTH = 1280 * INV_SCALE
         const val VP_HEIGHT = 720 * INV_SCALE
+
+        const val FAR_CLAMP_RENDER_DISTANCE = 300f
+        const val CURVATURE_ARC_SEGMENTS = 40
     }
 }
