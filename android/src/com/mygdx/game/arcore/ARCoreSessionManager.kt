@@ -46,6 +46,11 @@ class ARCoreSessionManager(private val activity: Activity) {
     // Projection matrix from ARCore camera (16 floats)
     private val projMatrix = FloatArray(16)
 
+    // Whether ARCore is currently tracking
+    @Volatile
+    var isTracking: Boolean = false
+        private set
+
     // Heading offset for calibration (similar to OrientationEKF.headingDegrees)
     var headingDegrees: Double = 0.0
 
@@ -181,7 +186,8 @@ class ARCoreSessionManager(private val activity: Activity) {
             // Update Geospatial pose if available
             updateGeospatialPose()
 
-            return frame?.camera?.trackingState == TrackingState.TRACKING
+            isTracking = frame?.camera?.trackingState == TrackingState.TRACKING
+            return isTracking
 
         } catch (e: CameraNotAvailableException) {
             Log.e(TAG, "Camera not available during update", e)

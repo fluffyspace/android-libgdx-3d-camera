@@ -16,6 +16,8 @@ data class ARObjectInfo(
 )
 
 class ARViewModel : ViewModel() {
+    var isArTracking by mutableStateOf(false)
+
     var editModeVisible by mutableStateOf(false)
         private set
 

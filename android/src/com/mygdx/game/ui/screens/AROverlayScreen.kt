@@ -114,6 +114,23 @@ fun AROverlayScreen(
             }
         )
 
+        // Tracking hint
+        if (!viewModel.isArTracking) {
+            Text(
+                text = "Point camera at a textured surface",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 76.dp)
+                    .background(
+                        Color.Black.copy(alpha = 0.6f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+
         // Top right - Close button
         Box(
             modifier = Modifier

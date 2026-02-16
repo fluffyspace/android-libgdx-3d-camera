@@ -10,6 +10,7 @@ import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.VertexAttributes
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.BitmapFontCache
+import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator
 import com.badlogic.gdx.graphics.g2d.Sprite
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
@@ -78,6 +79,7 @@ class MyGdxGame (
     val upVector = Vector3(0f, 1f, 0f)
     val xVector = Vector3(1f, 0f, 0f)
     var font: BitmapFont? = null
+    var fontSmall: BitmapFont? = null
     var text: String? = null
     var fontCaches: MutableList<BitmapFontCache> = mutableListOf()
     var noRender: Boolean = false
@@ -112,6 +114,14 @@ class MyGdxGame (
     private var personalBuildingCentroids: MutableList<Vector3> = mutableListOf()
     private val polygonLineHeight = 30f
     private val clampedArcs = mutableListOf<List<Vector3>>()
+
+    // Off-screen direction indicators
+    private data class OffScreenIndicator(
+        val name: String,
+        val angleDegrees: Float,  // positive = right, negative = left
+        val distance: Float
+    )
+    private val offScreenIndicators = mutableListOf<OffScreenIndicator>()
 
     // Vertices editor state
     var shapeRenderer: ShapeRenderer? = null
@@ -165,6 +175,12 @@ class MyGdxGame (
         parameter.size = 60
         parameter.characters = FreeTypeFontGenerator.DEFAULT_CHARS + "čćžšđČĆŽŠĐ"
         font = generator.generateFont(parameter)
+
+        val parameterSmall = FreeTypeFontGenerator.FreeTypeFontParameter()
+        parameterSmall.size = 36
+        parameterSmall.characters = FreeTypeFontGenerator.DEFAULT_CHARS + "čćžšđČĆŽŠĐ"
+        fontSmall = generator.generateFont(parameterSmall)
+
         generator.dispose()
 
         // Constructs a new OrthographicCamera, using the given viewport width and height
@@ -635,6 +651,23 @@ class MyGdxGame (
         return dist in minDistanceBuildings..maxDistanceBuildings
     }
 
+    /**
+     * Compute the horizontal angle from camera forward to the given world position.
+     * Returns null if the object is on-screen, otherwise returns degrees (positive = right, negative = left).
+     */
+    private fun computeOffScreenAngle(worldPos: Vector3): Float? {
+        val screenPos = Vector3(worldPos)
+        cam!!.project(screenPos)
+        val w = Gdx.graphics.width.toFloat()
+        val h = Gdx.graphics.height.toFloat()
+        if (screenPos.z <= 1f && screenPos.x in 0f..w && screenPos.y in 0f..h) {
+            return null // on-screen
+        }
+        // Transform to camera view space
+        val viewSpace = Vector3(worldPos).mul(cam!!.view)
+        return Math.toDegrees(atan2(viewSpace.x.toDouble(), (-viewSpace.z).toDouble())).toFloat()
+    }
+
     private fun formatDistance(meters: Float): String {
         return if (meters < 1000f) {
             "%.1f m".format(meters)
@@ -644,54 +677,27 @@ class MyGdxGame (
     }
 
     /**
-     * Interpolate points along a great circle from camera to object at ground level,
-     * then scale the arc to fit within clampDist. Returns rendering-space positions.
+     * Generate a curvature arc from camera toward the clamped object position.
+     * Horizontal positions are linearly interpolated from camera to clampedPos,
+     * with a downward Y offset at each point representing Earth's surface curvature
+     * drop: h = d_actual² / (2R). This makes the curvature visually apparent.
      */
     private fun interpolateGreatCircleArc(
-        lat1: Double, lon1: Double,
-        lat2: Double, lon2: Double,
+        clampedPos: Vector3,
         segments: Int,
-        clampDist: Float,
         actualDist: Float
     ): List<Vector3> {
-        val lat1Rad = Math.toRadians(lat1)
-        val lon1Rad = Math.toRadians(lon1)
-        val lat2Rad = Math.toRadians(lat2)
-        val lon2Rad = Math.toRadians(lon2)
-
-        // Angular distance on unit sphere (central angle)
-        val dLat = lat2Rad - lat1Rad
-        val dLon = lon2Rad - lon1Rad
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-                cos(lat1Rad) * cos(lat2Rad) * sin(dLon / 2) * sin(dLon / 2)
-        val centralAngle = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-        if (centralAngle < 1e-10) return emptyList()
-
-        val scale = clampDist / actualDist
         val points = mutableListOf<Vector3>()
-
         for (i in 0..segments) {
-            val f = i.toDouble() / segments
-            // Slerp fraction along great circle
-            val sinCA = sin(centralAngle)
-            val aCoeff = sin((1 - f) * centralAngle) / sinCA
-            val bCoeff = sin(f * centralAngle) / sinCA
-
-            val xEcef = aCoeff * cos(lat1Rad) * cos(lon1Rad) + bCoeff * cos(lat2Rad) * cos(lon2Rad)
-            val yEcef = aCoeff * cos(lat1Rad) * sin(lon1Rad) + bCoeff * cos(lat2Rad) * sin(lon2Rad)
-            val zEcef = aCoeff * sin(lat1Rad) + bCoeff * sin(lat2Rad)
-
-            // Convert unit sphere direction to ECEF at ground level
-            val lat = Math.toDegrees(atan2(zEcef, sqrt(xEcef * xEcef + yEcef * yEcef)))
-            val lon = Math.toDegrees(atan2(yEcef, xEcef))
-            val cart = geoToCartesian(lat, lon, 0.0)
-
-            // Rendering coords (ECEF offset with Y/Z swap), scaled to fit within clampDist
-            val dx = (cart.x - cameraCartesian.x) * scale
-            val dy = (cart.z - cameraCartesian.z) * scale  // Y/Z swap
-            val dz = (cart.y - cameraCartesian.y) * scale
-            points.add(Vector3(dx, dy, dz))
+            val f = i.toFloat() / segments
+            // Linear interpolation from camera to clamped position
+            val x = camTranslatingVector.x + (clampedPos.x - camTranslatingVector.x) * f
+            val y = camTranslatingVector.y + (clampedPos.y - camTranslatingVector.y) * f
+            val z = camTranslatingVector.z + (clampedPos.z - camTranslatingVector.z) * f
+            // Earth curvature drop: at real-world distance d, surface drops by d²/(2R)
+            val dActual = actualDist * f
+            val curvatureDrop = (dActual * dActual) / (2f * EARTH_RADIUS.toFloat())
+            points.add(Vector3(x, y - curvatureDrop, z))
         }
         return points
     }
@@ -709,6 +715,7 @@ class MyGdxGame (
         // Track which objects are polygon-based (should not render sphere)
         val polygonObjectIndices = personalBuildingObjectIndices.toSet()
         clampedArcs.clear()
+        offScreenIndicators.clear()
 
         for((index, objekt) in objects.withIndex()){
             if (objekt.hidden) {
@@ -739,13 +746,14 @@ class MyGdxGame (
                     objekt.visible = cam!!.frustum.sphereInFrustum(clampedPos, objekt.size)
                     if (objekt.visible) {
                         // Curvature arc
-                        val arc = interpolateGreatCircleArc(
-                            camera.x.toDouble(), camera.y.toDouble(),
-                            objekt.x.toDouble(), objekt.y.toDouble(),
-                            CURVATURE_ARC_SEGMENTS, FAR_CLAMP_RENDER_DISTANCE, actualDist
-                        )
+                        val arc = interpolateGreatCircleArc(clampedPos, CURVATURE_ARC_SEGMENTS, actualDist)
                         if (arc.size >= 2) clampedArcs.add(arc)
                         showObjectsName(index)
+                    } else {
+                        val angle = computeOffScreenAngle(clampedPos)
+                        if (angle != null) {
+                            offScreenIndicators.add(OffScreenIndicator(objekt.name, angle, actualDist))
+                        }
                     }
                 } else {
                     objekt.visible = true
@@ -767,18 +775,27 @@ class MyGdxGame (
                         .scale(objekt.size, objekt.size, objekt.size)
                 )
                 objekt.visible = cam!!.frustum.sphereInFrustum(clampedPos, objekt.size)
-                if (!objekt.visible) continue
+                if (!objekt.visible) {
+                    val angle = computeOffScreenAngle(clampedPos)
+                    if (angle != null) {
+                        offScreenIndicators.add(OffScreenIndicator(objekt.name, angle, actualDist))
+                    }
+                    continue
+                }
 
                 // Curvature arc
-                val arc = interpolateGreatCircleArc(
-                    camera.x.toDouble(), camera.y.toDouble(),
-                    objekt.x.toDouble(), objekt.y.toDouble(),
-                    CURVATURE_ARC_SEGMENTS, FAR_CLAMP_RENDER_DISTANCE, actualDist
-                )
+                val arc = interpolateGreatCircleArc(clampedPos, CURVATURE_ARC_SEGMENTS, actualDist)
                 if (arc.size >= 2) clampedArcs.add(arc)
             } else {
                 objekt.visible = isVisible(cam!!, index)
-                if (!objekt.visible) continue
+                if (!objekt.visible) {
+                    val objektPos2 = Vector3(objekt.diffX, objekt.diffY, objekt.diffZ)
+                    val angle = computeOffScreenAngle(objektPos2)
+                    if (angle != null) {
+                        offScreenIndicators.add(OffScreenIndicator(objekt.name, angle, actualDist))
+                    }
+                    continue
+                }
             }
 
             try{
@@ -989,6 +1006,43 @@ class MyGdxGame (
 
         }
         batch!!.end()
+
+        // Draw off-screen direction indicators
+        if (offScreenIndicators.isNotEmpty()) {
+            batch!!.begin()
+            val screenW = Gdx.graphics.width.toFloat()
+            val screenH = Gdx.graphics.height.toFloat()
+            val margin = 20f
+            val lineSpacing = fontSmall!!.lineHeight * 1.2f
+
+            val leftIndicators = offScreenIndicators.filter { it.angleDegrees < 0 }
+                .sortedBy { abs(it.angleDegrees) }
+            val rightIndicators = offScreenIndicators.filter { it.angleDegrees >= 0 }
+                .sortedBy { abs(it.angleDegrees) }
+
+            // Left side indicators
+            var y = screenH / 2f + (leftIndicators.size - 1) * lineSpacing / 2f
+            for (indicator in leftIndicators) {
+                val angleText = abs(indicator.angleDegrees).roundToInt()
+                val distText = formatDistance(indicator.distance)
+                val label = "< ${angleText}\u00B0  ${indicator.name}  $distText"
+                fontSmall!!.draw(batch, label, margin, y)
+                y -= lineSpacing
+            }
+
+            // Right side indicators
+            val glyphLayout = GlyphLayout()
+            y = screenH / 2f + (rightIndicators.size - 1) * lineSpacing / 2f
+            for (indicator in rightIndicators) {
+                val angleText = abs(indicator.angleDegrees).roundToInt()
+                val distText = formatDistance(indicator.distance)
+                val label = "${indicator.name}  $distText  ${angleText}\u00B0 >"
+                glyphLayout.setText(fontSmall, label)
+                fontSmall!!.draw(batch, label, screenW - margin - glyphLayout.width, y)
+                y -= lineSpacing
+            }
+            batch!!.end()
+        }
     }
 
     fun isVisible(cam: Camera, index: Int): Boolean {
@@ -1427,6 +1481,7 @@ class MyGdxGame (
         batch!!.dispose()
         mapSprite!!.texture.dispose()
         modelBatch!!.dispose()
+        fontSmall?.dispose()
         shapeRenderer?.dispose()
         vertexPreviewModel?.dispose()
         floorGridModel?.dispose()
