@@ -271,6 +271,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                     arViewModel.isArTracking = arCoreSessionManager.isTracking
                     val degrees = arCoreSessionManager.headingDegrees.toFloat() + game.worldRotation + game.worldRotationTmp
                     arViewModel.updateOrientationDegrees(degrees)
+                    arViewModel.cameraHeightMeters = game.cameraHeightOffset + game.cameraHeightOffsetTmp
 
                     // Update object list every ~500ms (every 10 iterations)
                     objectListCounter++

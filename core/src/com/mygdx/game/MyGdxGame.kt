@@ -70,6 +70,8 @@ class MyGdxGame (
     var startTouch = MyPoint()
     var worldRotation = 0f
     var worldRotationTmp = 0f
+    var cameraHeightOffset = 0f      // accumulated vertical offset in meters
+    var cameraHeightOffsetTmp = 0f   // temporary offset during drag
     var modelMoving: MyPolar? = null
     var modelMovingVertical: Float = 0f
     var modelRotatingY: Float = 0f
@@ -365,17 +367,20 @@ class MyGdxGame (
 
             // Build view matrix:
             // Matrix chain order determines point transformation order (reverse).
-            // Points are transformed: quat(arTranslate(worldRot(earthRot(translate(p)))))
+            // Points are transformed: quat(arTranslate(worldRot(heightShift(earthRot(translate(p))))))
             // 1. translate (GPS camera position offset)
             // 2. cameraEarthRot (earth curvature correction)
-            // 3. worldRotation (user's compass correction) - aligns geographic to ARCore world
-            // 4. arTranslate (ARCore positional tracking - physical movement from session start)
-            // 5. quat (device orientation from ARCore) - transforms to camera space
+            // 3. heightShift (virtual height offset - moves camera up/down in local tangent plane)
+            // 4. worldRotation (user's compass correction) - aligns geographic to ARCore world
+            // 5. arTranslate (ARCore positional tracking - physical movement from session start)
+            // 6. quat (device orientation from ARCore) - transforms to camera space
+            val totalHeightOffset = cameraHeightOffset + cameraHeightOffsetTmp
             view.set(
                 Matrix4()
                     .rotate(quat)
                     .translate(-arTranslation[0], -arTranslation[1], -arTranslation[2])
                     .rotate(upVector, worldRotation + worldRotationTmp)
+                    .translate(0f, -totalHeightOffset, 0f)
                     .mul(cameraEarthRotMatrix)
                     .translate(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
             )
@@ -1007,6 +1012,15 @@ class MyGdxGame (
         }
         batch!!.end()
 
+        // Draw virtual height indicator (upper left corner)
+        val totalHeight = cameraHeightOffset + cameraHeightOffsetTmp
+        if (totalHeight != 0f) {
+            batch!!.begin()
+            val heightText = "%.1f m".format(totalHeight)
+            fontSmall!!.draw(batch, heightText, 20f, Gdx.graphics.height - 20f)
+            batch!!.end()
+        }
+
         // Draw off-screen direction indicators
         if (offScreenIndicators.isNotEmpty()) {
             batch!!.begin()
@@ -1217,8 +1231,11 @@ class MyGdxGame (
         if(draggingHorizontal) {
             // Scale rotation so a full-screen swipe = 90 degrees (consistent across resolutions)
             worldRotationTmp = -(Gdx.input.x - startTouch.x) * 90f / Gdx.graphics.width
+        } else if(draggingVertical) {
+            // Vertical slide changes virtual camera height (swipe up = go higher)
+            // Full-screen swipe = 50 meters
+            cameraHeightOffsetTmp = -(Gdx.input.y - startTouch.y) * 50f / Gdx.graphics.height
         }
-        // Vertical slide disabled - distance is determined by GPS coordinates only
     }
 
     fun dragTresholdReached(): Boolean{
@@ -1369,6 +1386,9 @@ class MyGdxGame (
             if(worldRotationTmp != 0f) {
                 worldRotation = ((worldRotation + worldRotationTmp) % 360f + 360f) % 360f
                 worldRotationTmp = 0f
+            } else if(cameraHeightOffsetTmp != 0f) {
+                cameraHeightOffset += cameraHeightOffsetTmp
+                cameraHeightOffsetTmp = 0f
             } else if(selectedObject != -1 && modelMoving != null){
                 val myPoint = getObjectsXZAfterRot(objects[selectedObject])
                 objects[selectedObject].diffX = myPoint.x

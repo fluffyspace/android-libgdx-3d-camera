@@ -39,20 +39,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.mygdx.game.OrientationIndicator
 import com.mygdx.game.R
 import com.mygdx.game.viewmodel.ARViewModel
 
@@ -87,32 +83,25 @@ fun AROverlayScreen(
     onManualDistanceChanged: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val orientationIndicator = remember {
-        OrientationIndicator(context)
-    }
-
-    // Update orientation indicator when degrees change
-    DisposableEffect(viewModel.orientationDegrees) {
-        orientationIndicator.degrees = viewModel.orientationDegrees
-        orientationIndicator.invalidate()
-        onDispose { }
-    }
-
     Box(modifier = modifier.fillMaxSize()) {
-        // Top center - Orientation indicator
-        AndroidView(
-            factory = { orientationIndicator },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 10.dp)
-                .width(300.dp)
-                .height(60.dp),
-            update = { view ->
-                view.degrees = viewModel.orientationDegrees
-                view.invalidate()
+        // Top left - Virtual height indicator
+        if (viewModel.cameraHeightMeters != 0f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 10.dp, top = 10.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xAA000000))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "${"%.1f".format(viewModel.cameraHeightMeters)} m",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
-        )
+        }
 
         // Tracking hint
         if (!viewModel.isArTracking) {

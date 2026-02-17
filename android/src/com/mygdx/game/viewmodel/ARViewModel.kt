@@ -121,6 +121,9 @@ class ARViewModel : ViewModel() {
         selectedEditMode = null
     }
 
+    // Virtual camera height offset
+    var cameraHeightMeters by mutableFloatStateOf(0f)
+
     // Coordinate viewer
     var coordinateViewerEnabled by mutableStateOf(false)
     var centerLat by mutableStateOf<Double?>(null)
