@@ -25,6 +25,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -81,6 +83,8 @@ fun AROverlayScreen(
     onHeightOffsetChanged: (Float) -> Unit = {},
     onCoordinateViewerToggle: (Boolean) -> Unit = {},
     onManualDistanceChanged: (Float) -> Unit = {},
+    onBuildingOpacityChanged: (Float) -> Unit = {},
+    onBuildingDarknessChanged: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -235,7 +239,9 @@ fun AROverlayScreen(
                     onAutoAdjustAltitude = onAutoAdjustAltitude,
                     onHeightOffsetChanged = onHeightOffsetChanged,
                     onCoordinateViewerToggle = onCoordinateViewerToggle,
-                    onManualDistanceChanged = onManualDistanceChanged
+                    onManualDistanceChanged = onManualDistanceChanged,
+                    onBuildingOpacityChanged = onBuildingOpacityChanged,
+                    onBuildingDarknessChanged = onBuildingDarknessChanged
                 )
             }
 
@@ -612,7 +618,9 @@ private fun SettingsPanel(
     onAutoAdjustAltitude: () -> Unit,
     onHeightOffsetChanged: (Float) -> Unit,
     onCoordinateViewerToggle: (Boolean) -> Unit = {},
-    onManualDistanceChanged: (Float) -> Unit = {}
+    onManualDistanceChanged: (Float) -> Unit = {},
+    onBuildingOpacityChanged: (Float) -> Unit = {},
+    onBuildingDarknessChanged: (Float) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -720,6 +728,62 @@ private fun SettingsPanel(
                     inactiveTrackColor = Color.White.copy(alpha = 0.3f)
                 )
             )
+        }
+
+        // Building Appearance (collapsible)
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { viewModel.buildingAppearanceExpanded = !viewModel.buildingAppearanceExpanded },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Building Appearance", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = if (viewModel.buildingAppearanceExpanded) Icons.Default.KeyboardArrowUp
+                    else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.7f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        AnimatedVisibility(visible = viewModel.buildingAppearanceExpanded) {
+            Column {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Opacity: ${(viewModel.buildingOpacity * 100).toInt()}%",
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+                Slider(
+                    value = viewModel.buildingOpacity,
+                    onValueChange = { onBuildingOpacityChanged(it) },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Color.White,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                    )
+                )
+                Text(
+                    "Darkness: ${(viewModel.buildingDarkness * 100).toInt()}%",
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+                Slider(
+                    value = viewModel.buildingDarkness,
+                    onValueChange = { onBuildingDarknessChanged(it) },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Color.White,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                    )
+                )
+            }
         }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))

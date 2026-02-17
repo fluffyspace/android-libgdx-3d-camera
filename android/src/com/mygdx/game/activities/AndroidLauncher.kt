@@ -587,6 +587,20 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
                         },
                         onManualDistanceChanged = { dist ->
                             arViewModel.manualDistance = dist
+                        },
+                        onBuildingOpacityChanged = { opacity ->
+                            arViewModel.buildingOpacity = opacity
+                            Gdx.app.postRunnable {
+                                game.buildingOpacity = opacity
+                                game.updateBuildingAppearance()
+                            }
+                        },
+                        onBuildingDarknessChanged = { darkness ->
+                            arViewModel.buildingDarkness = darkness
+                            Gdx.app.postRunnable {
+                                game.buildingDarkness = darkness
+                                game.updateBuildingAppearance()
+                            }
                         }
                     )
                 }

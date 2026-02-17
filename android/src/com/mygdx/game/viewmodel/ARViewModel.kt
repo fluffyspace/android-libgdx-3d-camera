@@ -53,6 +53,11 @@ class ARViewModel : ViewModel() {
     // Depth ordering
     var objectsOnTop by mutableStateOf(true)
 
+    // Building appearance
+    var buildingOpacity by mutableFloatStateOf(0.35f)
+    var buildingDarkness by mutableFloatStateOf(0.4f)
+    var buildingAppearanceExpanded by mutableStateOf(false)
+
     // Info
     var personalObjectCount by mutableIntStateOf(0)
     var nearbyBuildingCount by mutableIntStateOf(0)

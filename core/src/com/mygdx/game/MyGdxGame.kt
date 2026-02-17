@@ -104,6 +104,8 @@ class MyGdxGame (
     private val buildingMeshGenerator = BuildingMeshGenerator()
     var buildingsVisible: Boolean = true
     var objectsOnTop: Boolean = true
+    var buildingOpacity: Float = 0.35f
+    var buildingDarkness: Float = 0.4f
     var selectedBuilding = -1
     var onBuildingChange: ((Building) -> Unit)? = null
     private var buildingHeightDragStart = 0f
@@ -1490,6 +1492,19 @@ class MyGdxGame (
             buildingInstances[index] = ModelInstance(newModel)
         } catch (e: Exception) {
             // Skip if regeneration fails
+        }
+    }
+
+    fun updateBuildingAppearance() {
+        val brightness = 1f - buildingDarkness
+        val color = Color(brightness, brightness, brightness, buildingOpacity)
+        for (instance in buildingInstances) {
+            for (material in instance.materials) {
+                val colorAttr = material.get(ColorAttribute.Diffuse) as? ColorAttribute
+                colorAttr?.color?.set(color)
+                val blendAttr = material.get(BlendingAttribute.Type) as? BlendingAttribute
+                blendAttr?.opacity = buildingOpacity
+            }
         }
     }
 
