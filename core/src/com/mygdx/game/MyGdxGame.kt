@@ -392,6 +392,14 @@ class MyGdxGame (
             invProjectionView.set(combined)
             Matrix4.inv(invProjectionView.`val`)
             frustum.update(invProjectionView)
+
+            // The earth rotation matrix has det=-1 (maps Z to South instead of North
+            // to align with OpenGL/ARCore's -Z forward convention). This reflection
+            // flips the frustum planes inside-out. Fix by negating all plane normals.
+            for (plane in frustum.planes) {
+                plane.normal.scl(-1f)
+                plane.d = -plane.d
+            }
         }
         camHeightChange(Vector3(camTranslatingVector.x, camTranslatingVector.y, camTranslatingVector.z))
     }
@@ -416,12 +424,12 @@ class MyGdxGame (
 
         // Row 0 (East):  local East direction in game coords = (-sinLon, 0, cosLon)
         // Row 1 (Up):    surface normal in game coords = (cosLat*cosLon, sinLat, cosLat*sinLon)
-        // Row 2 (North): local North in game coords = (-sinLat*cosLon, cosLat, -sinLat*sinLon)
+        // Row 2 (South): negated North so +Z = South, aligning with OpenGL/ARCore -Z = forward = North
         val vals = FloatArray(16)
         // Column-major order for LibGDX Matrix4
         vals[Matrix4.M00] = -sinLon;           vals[Matrix4.M01] = 0f;      vals[Matrix4.M02] = cosLon
         vals[Matrix4.M10] = cosLat * cosLon;   vals[Matrix4.M11] = sinLat;  vals[Matrix4.M12] = cosLat * sinLon
-        vals[Matrix4.M20] = -sinLat * cosLon;  vals[Matrix4.M21] = cosLat;  vals[Matrix4.M22] = -sinLat * sinLon
+        vals[Matrix4.M20] = sinLat * cosLon;   vals[Matrix4.M21] = -cosLat; vals[Matrix4.M22] = sinLat * sinLon
         vals[Matrix4.M03] = 0f; vals[Matrix4.M13] = 0f; vals[Matrix4.M23] = 0f
         vals[Matrix4.M30] = 0f; vals[Matrix4.M31] = 0f; vals[Matrix4.M32] = 0f; vals[Matrix4.M33] = 1f
         return Matrix4(vals)

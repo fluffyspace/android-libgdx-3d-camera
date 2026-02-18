@@ -23,3 +23,4 @@ data class Objekt(
     var hidden: Boolean = false,
     var category: String? = null,
 )
+                                       
