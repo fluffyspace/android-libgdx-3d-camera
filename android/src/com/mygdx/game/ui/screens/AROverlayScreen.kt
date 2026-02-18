@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mygdx.game.R
+import com.mygdx.game.ui.components.RotatingCompass
 import com.mygdx.game.viewmodel.ARViewModel
 
 @Composable
@@ -106,6 +107,14 @@ fun AROverlayScreen(
                 )
             }
         }
+
+        // Compass at top center
+        RotatingCompass(
+            headingDegrees = viewModel.orientationDegrees,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 6.dp)
+        )
 
         // Tracking hint
         if (!viewModel.isArTracking) {
@@ -630,304 +639,344 @@ private fun SettingsPanel(
             .padding(12.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Objects distance section
-        Text("Objects (${viewModel.personalObjectCount} loaded)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${viewModel.minDistanceObjects.toInt()}–${viewModel.maxDistanceObjects.toInt()}m",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 12.sp,
-                modifier = Modifier.width(70.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("No limit", color = Color.White, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(4.dp))
-            Switch(
-                checked = viewModel.noDistanceObjects,
-                onCheckedChange = { onNoDistanceObjectsToggle(it) },
-                modifier = Modifier.height(24.dp),
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.Yellow,
-                    checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
-                )
-            )
-        }
-        if (!viewModel.noDistanceObjects) {
-            RangeSlider(
-                value = viewModel.minDistanceObjects..viewModel.maxDistanceObjects,
-                onValueChange = { range ->
-                    onObjectDistanceChanged(range.start, range.endInclusive)
-                },
-                valueRange = 0f..1000f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                )
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Objects on top", color = Color.White, fontSize = 12.sp)
-            Spacer(modifier = Modifier.weight(1f))
-            Switch(
-                checked = viewModel.objectsOnTop,
-                onCheckedChange = { onObjectsOnTopToggle(it) },
-                modifier = Modifier.height(24.dp),
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.Yellow,
-                    checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
-                )
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Buildings distance section
-        Text("Buildings (${viewModel.nearbyBuildingCount} fetched)", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        if (viewModel.buildingFetchError != null) {
-            Text(
-                viewModel.buildingFetchError!!,
-                color = Color(0xFFFF6666),
-                fontSize = 11.sp
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "${viewModel.minDistanceBuildings.toInt()}–${viewModel.maxDistanceBuildings.toInt()}m",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 12.sp,
-                modifier = Modifier.width(70.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("No limit", color = Color.White, fontSize = 12.sp)
-            Spacer(modifier = Modifier.width(4.dp))
-            Switch(
-                checked = viewModel.noDistanceBuildings,
-                onCheckedChange = { onNoDistanceBuildingsToggle(it) },
-                modifier = Modifier.height(24.dp),
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.Yellow,
-                    checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
-                )
-            )
-        }
-        if (!viewModel.noDistanceBuildings) {
-            RangeSlider(
-                value = viewModel.minDistanceBuildings..viewModel.maxDistanceBuildings,
-                onValueChange = { range ->
-                    onBuildingDistanceChanged(range.start, range.endInclusive)
-                },
-                valueRange = 0f..1000f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                )
-            )
-        }
-
-        // Building Appearance (collapsible)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { viewModel.buildingAppearanceExpanded = !viewModel.buildingAppearanceExpanded },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Building Appearance", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-            Spacer(modifier = Modifier.weight(1f))
-            Icon(
-                imageVector = if (viewModel.buildingAppearanceExpanded) Icons.Default.KeyboardArrowUp
-                    else Icons.Default.KeyboardArrowDown,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        AnimatedVisibility(visible = viewModel.buildingAppearanceExpanded) {
+        // Objects section (collapsible)
+        CollapsibleSectionHeader(
+            title = "Objects (${viewModel.personalObjectCount} loaded)",
+            expanded = viewModel.objectsSectionExpanded,
+            onToggle = { viewModel.objectsSectionExpanded = !viewModel.objectsSectionExpanded }
+        )
+        AnimatedVisibility(visible = viewModel.objectsSectionExpanded) {
             Column {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Opacity: ${(viewModel.buildingOpacity * 100).toInt()}%",
-                    color = Color.White,
-                    fontSize = 12.sp
-                )
-                Slider(
-                    value = viewModel.buildingOpacity,
-                    onValueChange = { onBuildingOpacityChanged(it) },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${viewModel.minDistanceObjects.toInt()}–${viewModel.maxDistanceObjects.toInt()}m",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.width(70.dp)
                     )
-                )
-                Text(
-                    "Darkness: ${(viewModel.buildingDarkness * 100).toInt()}%",
-                    color = Color.White,
-                    fontSize = 12.sp
-                )
-                Slider(
-                    value = viewModel.buildingDarkness,
-                    onValueChange = { onBuildingDarknessChanged(it) },
-                    valueRange = 0f..1f,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("No limit", color = Color.White, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Switch(
+                        checked = viewModel.noDistanceObjects,
+                        onCheckedChange = { onNoDistanceObjectsToggle(it) },
+                        modifier = Modifier.height(24.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Yellow,
+                            checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
+                        )
                     )
-                )
+                }
+                if (!viewModel.noDistanceObjects) {
+                    RangeSlider(
+                        value = viewModel.minDistanceObjects..viewModel.maxDistanceObjects,
+                        onValueChange = { range ->
+                            onObjectDistanceChanged(range.start, range.endInclusive)
+                        },
+                        valueRange = 0f..1000f,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Objects on top", color = Color.White, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = viewModel.objectsOnTop,
+                        onCheckedChange = { onObjectsOnTopToggle(it) },
+                        modifier = Modifier.height(24.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Yellow,
+                            checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
+                        )
+                    )
+                }
             }
         }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
 
-        // Floor Grid section
-        Text("Floor Grid", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Show detected floor", color = Color.White, fontSize = 12.sp)
-            Spacer(modifier = Modifier.weight(1f))
-            Switch(
-                checked = viewModel.floorGridEnabled,
-                onCheckedChange = { onFloorGridToggle(it) },
-                modifier = Modifier.height(24.dp),
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.Yellow,
-                    checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
-                )
-            )
-        }
-        if (viewModel.floorGridEnabled && viewModel.floorHeightLive > 0f) {
-            Text(
-                "Phone height: ${"%.1f".format(viewModel.floorHeightLive)}m above floor",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 11.sp
-            )
-            if (viewModel.altitudeAutoAdjusted) {
-                Text(
-                    "Floor at ${"%.1f".format(viewModel.groundElevation + viewModel.heightOffset)}m ASL",
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 11.sp
-                )
+        // Buildings section (collapsible)
+        CollapsibleSectionHeader(
+            title = "Buildings (${viewModel.nearbyBuildingCount} fetched)",
+            expanded = viewModel.buildingsSectionExpanded,
+            onToggle = { viewModel.buildingsSectionExpanded = !viewModel.buildingsSectionExpanded }
+        )
+        AnimatedVisibility(visible = viewModel.buildingsSectionExpanded) {
+            Column {
+                if (viewModel.buildingFetchError != null) {
+                    Text(
+                        viewModel.buildingFetchError!!,
+                        color = Color(0xFFFF6666),
+                        fontSize = 11.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${viewModel.minDistanceBuildings.toInt()}–${viewModel.maxDistanceBuildings.toInt()}m",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.width(70.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("No limit", color = Color.White, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Switch(
+                        checked = viewModel.noDistanceBuildings,
+                        onCheckedChange = { onNoDistanceBuildingsToggle(it) },
+                        modifier = Modifier.height(24.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Yellow,
+                            checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
+                        )
+                    )
+                }
+                if (!viewModel.noDistanceBuildings) {
+                    RangeSlider(
+                        value = viewModel.minDistanceBuildings..viewModel.maxDistanceBuildings,
+                        onValueChange = { range ->
+                            onBuildingDistanceChanged(range.start, range.endInclusive)
+                        },
+                        valueRange = 0f..1000f,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+
+                // Building Appearance (collapsible sub-section)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.buildingAppearanceExpanded = !viewModel.buildingAppearanceExpanded },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Building Appearance", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        imageVector = if (viewModel.buildingAppearanceExpanded) Icons.Default.KeyboardArrowUp
+                            else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                AnimatedVisibility(visible = viewModel.buildingAppearanceExpanded) {
+                    Column {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Opacity: ${(viewModel.buildingOpacity * 100).toInt()}%",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                        Slider(
+                            value = viewModel.buildingOpacity,
+                            onValueChange = { onBuildingOpacityChanged(it) },
+                            valueRange = 0f..1f,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            )
+                        )
+                        Text(
+                            "Darkness: ${(viewModel.buildingDarkness * 100).toInt()}%",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                        Slider(
+                            value = viewModel.buildingDarkness,
+                            onValueChange = { onBuildingDarknessChanged(it) },
+                            valueRange = 0f..1f,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            )
+                        )
+                    }
+                }
             }
         }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
 
-        // Altitude section
-        Text("Altitude", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(4.dp))
-        if (viewModel.isAutoAdjusting) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Adjusting...", color = Color.White, fontSize = 12.sp)
+        // Floor Grid section (collapsible)
+        CollapsibleSectionHeader(
+            title = "Floor Grid",
+            expanded = viewModel.floorGridSectionExpanded,
+            onToggle = { viewModel.floorGridSectionExpanded = !viewModel.floorGridSectionExpanded }
+        )
+        AnimatedVisibility(visible = viewModel.floorGridSectionExpanded) {
+            Column {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show detected floor", color = Color.White, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = viewModel.floorGridEnabled,
+                        onCheckedChange = { onFloorGridToggle(it) },
+                        modifier = Modifier.height(24.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Yellow,
+                            checkedTrackColor = Color.Yellow.copy(alpha = 0.5f)
+                        )
+                    )
+                }
+                if (viewModel.floorGridEnabled && viewModel.floorHeightLive > 0f) {
+                    Text(
+                        "Phone height: ${"%.1f".format(viewModel.floorHeightLive)}m above floor",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 11.sp
+                    )
+                    if (viewModel.altitudeAutoAdjusted) {
+                        Text(
+                            "Floor at ${"%.1f".format(viewModel.groundElevation + viewModel.heightOffset)}m ASL",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
             }
-        } else if (viewModel.altitudeAutoAdjusted) {
-            Button(
-                onClick = onAutoAdjustAltitude,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4CAF50)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    "Altitude set (${"%.1f".format(viewModel.computeAltitude())}m)",
-                    color = Color.White,
-                    fontSize = 12.sp
-                )
-            }
-        } else {
-            Button(
-                onClick = onAutoAdjustAltitude,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Auto-adjust altitude", color = Color.White, fontSize = 12.sp)
-            }
-        }
-        if (viewModel.autoAdjustError != null) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                viewModel.autoAdjustError!!,
-                color = Color(0xFFFF6666),
-                fontSize = 11.sp
-            )
-        }
-        if (viewModel.altitudeAutoAdjusted) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                "Floor offset: ${viewModel.heightOffset.toInt()}m",
-                color = Color.White,
-                fontSize = 12.sp
-            )
-            Slider(
-                value = viewModel.heightOffset,
-                onValueChange = { onHeightOffsetChanged(it) },
-                valueRange = -20f..20f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                )
-            )
-            Text(
-                "Camera altitude: ${"%.1f".format(viewModel.computeAltitude())}m ASL",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 11.sp
-            )
         }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
 
-        // Coordinate Viewer section
-        Text("Coordinate Viewer", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Show center coordinates", color = Color.White, fontSize = 12.sp)
-            Spacer(modifier = Modifier.weight(1f))
-            Switch(
-                checked = viewModel.coordinateViewerEnabled,
-                onCheckedChange = { onCoordinateViewerToggle(it) },
-                modifier = Modifier.height(24.dp),
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.Cyan,
-                    checkedTrackColor = Color.Cyan.copy(alpha = 0.5f)
-                )
-            )
+        // Altitude section (collapsible)
+        CollapsibleSectionHeader(
+            title = "Altitude",
+            expanded = viewModel.altitudeSectionExpanded,
+            onToggle = { viewModel.altitudeSectionExpanded = !viewModel.altitudeSectionExpanded }
+        )
+        AnimatedVisibility(visible = viewModel.altitudeSectionExpanded) {
+            Column {
+                Spacer(modifier = Modifier.height(4.dp))
+                if (viewModel.isAutoAdjusting) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Adjusting...", color = Color.White, fontSize = 12.sp)
+                    }
+                } else if (viewModel.altitudeAutoAdjusted) {
+                    Button(
+                        onClick = onAutoAdjustAltitude,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Altitude set (${"%.1f".format(viewModel.computeAltitude())}m)",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onAutoAdjustAltitude,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(alpha = 0.2f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Auto-adjust altitude", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+                if (viewModel.autoAdjustError != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        viewModel.autoAdjustError!!,
+                        color = Color(0xFFFF6666),
+                        fontSize = 11.sp
+                    )
+                }
+                if (viewModel.altitudeAutoAdjusted) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Floor offset: ${viewModel.heightOffset.toInt()}m",
+                        color = Color.White,
+                        fontSize = 12.sp
+                    )
+                    Slider(
+                        value = viewModel.heightOffset,
+                        onValueChange = { onHeightOffsetChanged(it) },
+                        valueRange = -20f..20f,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                    Text(
+                        "Camera altitude: ${"%.1f".format(viewModel.computeAltitude())}m ASL",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 11.sp
+                    )
+                }
+            }
         }
-        if (viewModel.coordinateViewerEnabled) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Manual fallback: ${viewModel.manualDistance.toInt()}m",
-                color = Color.White,
-                fontSize = 12.sp
-            )
-            Slider(
-                value = viewModel.manualDistance,
-                onValueChange = { onManualDistanceChanged(it) },
-                valueRange = 1f..500f,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.Cyan,
-                    activeTrackColor = Color.Cyan,
-                    inactiveTrackColor = Color.Cyan.copy(alpha = 0.3f)
-                )
-            )
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
+
+        // Coordinate Viewer section (collapsible)
+        CollapsibleSectionHeader(
+            title = "Coordinate Viewer",
+            expanded = viewModel.coordinateViewerSectionExpanded,
+            onToggle = { viewModel.coordinateViewerSectionExpanded = !viewModel.coordinateViewerSectionExpanded }
+        )
+        AnimatedVisibility(visible = viewModel.coordinateViewerSectionExpanded) {
+            Column {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show center coordinates", color = Color.White, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = viewModel.coordinateViewerEnabled,
+                        onCheckedChange = { onCoordinateViewerToggle(it) },
+                        modifier = Modifier.height(24.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Cyan,
+                            checkedTrackColor = Color.Cyan.copy(alpha = 0.5f)
+                        )
+                    )
+                }
+                if (viewModel.coordinateViewerEnabled) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Manual fallback: ${viewModel.manualDistance.toInt()}m",
+                        color = Color.White,
+                        fontSize = 12.sp
+                    )
+                    Slider(
+                        value = viewModel.manualDistance,
+                        onValueChange = { onManualDistanceChanged(it) },
+                        valueRange = 1f..500f,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.Cyan,
+                            activeTrackColor = Color.Cyan,
+                            inactiveTrackColor = Color.Cyan.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
         }
     }
 }
@@ -998,6 +1047,30 @@ private fun VertexButton(
             color = if (enabled) color else Color.White.copy(alpha = 0.3f),
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun CollapsibleSectionHeader(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.weight(1f))
+        Icon(
+            imageVector = if (expanded) Icons.Default.KeyboardArrowUp
+                else Icons.Default.KeyboardArrowDown,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp)
         )
     }
 }

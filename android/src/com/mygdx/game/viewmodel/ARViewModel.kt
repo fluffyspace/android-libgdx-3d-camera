@@ -34,6 +34,11 @@ class ARViewModel : ViewModel() {
 
     // Settings panel
     var settingsExpanded by mutableStateOf(false)
+    var objectsSectionExpanded by mutableStateOf(false)
+    var buildingsSectionExpanded by mutableStateOf(false)
+    var floorGridSectionExpanded by mutableStateOf(false)
+    var altitudeSectionExpanded by mutableStateOf(false)
+    var coordinateViewerSectionExpanded by mutableStateOf(false)
 
     // Object list panel
     var objectListExpanded by mutableStateOf(false)

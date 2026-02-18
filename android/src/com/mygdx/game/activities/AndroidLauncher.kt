@@ -269,7 +269,7 @@ class AndroidLauncher : AndroidApplicationOverrided(), OnDrawFrame {
 
                 withContext(Dispatchers.Main) {
                     arViewModel.isArTracking = arCoreSessionManager.isTracking
-                    val degrees = arCoreSessionManager.headingDegrees.toFloat() + game.worldRotation + game.worldRotationTmp
+                    val degrees = game.arCoreYawDegrees + game.worldRotation + game.worldRotationTmp
                     arViewModel.updateOrientationDegrees(degrees)
                     arViewModel.cameraHeightMeters = game.cameraHeightOffset + game.cameraHeightOffsetTmp
 

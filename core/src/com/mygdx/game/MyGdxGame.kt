@@ -349,6 +349,8 @@ class MyGdxGame (
 
     var quat = Quaternion()
     var camTranslatingVector = Vector3()
+    var arCoreYawDegrees = 0f
+
     fun updateCamera(){
         cam!!.apply {
             // Use ARCore's projection matrix which has correct FOV from camera intrinsics
@@ -360,6 +362,16 @@ class MyGdxGame (
             val cameraMoved = Vector3( newCoordinate.x-cameraCartesian.x, newCoordinate.z-cameraCartesian.z, newCoordinate.y-cameraCartesian.y)
 
             Matrix4(onDrawFrame.lastHeadView).getRotation(quat)
+
+            // Extract yaw from ARCore quaternion for compass display.
+            // The conjugate transforms from camera space back to world space.
+            // We get the forward vector (-Z in camera space) in world space,
+            // then compute the yaw angle on the XZ plane.
+            val conjQuat = Quaternion(quat).conjugate()
+            val forward = Vector3(0f, 0f, -1f)
+            conjQuat.transform(forward)
+            arCoreYawDegrees = Math.toDegrees(atan2(forward.x.toDouble(), (-forward.z).toDouble())).toFloat()
+
             val arTranslation = onDrawFrame.cameraTranslation
             camTranslatingVector = Vector3(
                 cameraMoved.x,
